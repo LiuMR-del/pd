@@ -1,0 +1,24 @@
+{
+  "name": "@pd/bench",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "Stage-0 algorithm benchmark: synthetic images, metrics, previews and a static comparison page.",
+  "type": "module",
+  "scripts": {
+    "synth": "tsx src/synth.ts",
+    "bench": "tsx src/run.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@pd/palettes": "workspace:*",
+    "@pd/pattern-core": "workspace:*",
+    "@types/node": "^24.0.0",
+    "@types/pngjs": "^6.0.5",
+    "pngjs": "^7.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}

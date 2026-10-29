@@ -1,0 +1,27 @@
+{
+  "name": "@pd/palettes",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "Bead palette data (MARD / COCO / 漫漫 / 盼盼 / 咪小窝) derived from perler-beads, plus build and validation scripts.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./data/palettes.json": "./data/palettes.json"
+  },
+  "scripts": {
+    "build:data": "tsx scripts/build.ts",
+    "validate": "tsx scripts/validate.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@pd/pattern-core": "workspace:*",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
