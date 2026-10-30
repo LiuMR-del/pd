@@ -166,6 +166,19 @@ importers:
 
   .: {}
 
+  packages/editor-core:
+    dependencies:
+      '@pd/pattern-core':
+        specifier: workspace:*
+        version: link:../pattern-core
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@24.19.2)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))
+
   packages/palettes:
     devDependencies:
       '@pd/pattern-core':
@@ -189,6 +202,19 @@ importers:
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@24.19.2)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))
+
+  packages/render:
+    dependencies:
+      '@pd/editor-core':
+        specifier: workspace:*
+        version: link:../editor-core
+    devDependencies:
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
