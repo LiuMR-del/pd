@@ -52,6 +52,11 @@ export class PatternEditor {
     return this.redoStack.length > 0;
   }
 
+  /** True between beginStroke() and endStroke(). */
+  get stroking(): boolean {
+    return this.stroke !== null;
+  }
+
   /** Label of the step undo() would revert (for tooltips), or null. */
   get undoLabel(): string | null {
     return this.undoStack.length ? this.undoStack[this.undoStack.length - 1].label : null;
@@ -138,6 +143,8 @@ export class PatternEditor {
     const after = new Uint16Array(idx.length);
     for (let k = 0; k < idx.length; k++) after[k] = this.doc.cells[idx[k]];
     this.push({ label: s.label, idx, before, after });
+    // cells were already reported while painting; this tells listeners the undo state changed
+    this.emit(new Int32Array(0));
     return true;
   }
 

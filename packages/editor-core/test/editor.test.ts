@@ -53,10 +53,12 @@ describe('PatternEditor', () => {
     const doc = makeDoc(['AAAAA', 'AAAAA']);
     const ed = new PatternEditor(doc);
     ed.beginStroke();
+    expect(ed.stroking).toBe(true);
     ed.paintLine(0, 0, 0, 4, 1);
     ed.paintCell(0, 2, 2);
     ed.paintLine(0, 4, 1, 4, 2);
     expect(ed.endStroke()).toBe(true);
+    expect(ed.stroking).toBe(false);
     expect(show(doc)).toEqual(['BBCBC', 'AAAAC']);
     ed.undo();
     expect(show(doc)).toEqual(['AAAAA', 'AAAAA']);
@@ -119,7 +121,8 @@ describe('PatternEditor', () => {
     ed.replaceColor(0, 2);
     off();
     ed.undo();
-    expect(seen).toEqual([[6], 'all']);
+    // the empty notification closes the single-cell stroke (undo availability changed)
+    expect(seen).toEqual([[6], [], 'all']);
   });
 
   it('adds colors on demand and rejects unknown indices', () => {

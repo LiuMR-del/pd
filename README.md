@@ -1,14 +1,17 @@
 # PD — 拼豆图纸生成
 
-把图片转换为拼豆（Perler / Hama / MARD 等）图纸的工具，计划首发微信小程序（uni-app）。
+把图片转换为拼豆（Perler / Hama / MARD 等）图纸的工具：PC 网页（同时适配手机浏览器）+ 微信小程序（uni-app）。
 
-当前处于**阶段 0：算法验证**，仓库只包含算法包、色卡数据和评测工具。
+当前处于**阶段 1a：PC 网页 MVP**（阶段 0 算法验证已完成，见 `docs/阶段0-算法报告.md`）。
 
 ## 目录
 
 ```
 packages/pattern-core/   # 算法（纯 TS、零运行时依赖），可在小程序 Worker / H5 / Node 中运行
 packages/palettes/       # 色卡数据（JSON）+ 校验脚本
+packages/editor-core/    # 图纸文档、编辑命令、撤销重做、用量统计、草稿序列化
+packages/render/         # 图纸渲染与导出排版（标准 Canvas 2D 子集，网页 / 小程序共用）
+apps/web/                # PC 网页（Vue 3 + Vite），算法在 Web Worker 里跑，作品存在浏览器 IndexedDB
 tools/bench/             # 评测：测试集清单、合成图、指标脚本、本地对比页
 docs/                    # 方案、任务清单、阶段报告
 ```
@@ -20,6 +23,8 @@ corepack enable pnpm
 pnpm install
 pnpm -r test        # 单元测试
 pnpm -r typecheck   # 类型检查
+pnpm dev:web        # 本地运行网页，浏览器打开终端里显示的地址
+pnpm build:web      # 打包网页到 apps/web/dist/（静态文件）
 pnpm bench          # 跑评测，输出到 tools/bench/out/（需先把测试图放进 tools/bench/images/）
 ```
 

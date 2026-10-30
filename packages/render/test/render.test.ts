@@ -128,3 +128,14 @@ describe('export sheet', () => {
     expect(usageText(doc).split('\n')).toEqual(['测试（MARD，3×2 格，共 5 颗）', 'B2\t3', 'A1\t2']);
   });
 });
+
+describe('duplicate codes', () => {
+  it('labels same-code different-color entries with their hex in the legend', () => {
+    const dup: PatternDoc = { ...doc, palette: [{ key: 'S4', hex: '#7FCD9D' }, { key: 'S4', hex: '#F3C1C0' }] };
+    const { ctx, calls } = recorder();
+    layoutSheet(dup, { cellSize: 20 }).draw(ctx);
+    const texts = calls.filter((c) => c[0] === 'fillText').map((c) => String(c[2]));
+    expect(texts).toContain('S4(#F3C1C0) × 3');
+    expect(texts).toContain('S4(#7FCD9D) × 2');
+  });
+});

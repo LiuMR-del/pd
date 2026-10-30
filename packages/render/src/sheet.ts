@@ -46,6 +46,10 @@ export function layoutSheet(doc: PatternDoc, options: SheetOptions = {}): SheetL
   const mirror = !!options.mirror;
   const usage = colorUsage(doc);
   const beads = beadCount(doc);
+  // some brand data maps one code to two colors (漫漫 S4): tell them apart in the legend
+  const counts = new Map<string, number>();
+  for (const u of usage) counts.set(u.key, (counts.get(u.key) ?? 0) + 1);
+  const label = (u: ColorUsage) => ((counts.get(u.key) ?? 0) > 1 ? `${u.key}(${u.hex}) × ${u.count}` : `${u.key} × ${u.count}`);
   const pad = Math.max(16, s);
   const headerH = Math.round(s * 2.4);
   const rulerTop = Math.round(s * 1.0);
@@ -149,7 +153,7 @@ export function layoutSheet(doc: PatternDoc, options: SheetOptions = {}): SheetL
       ctx.lineTo(x + 0.5, y + (itemH - s) / 2 + 0.5);
       ctx.stroke();
       ctx.fillStyle = INK;
-      ctx.fillText(`${u.key} × ${u.count}`, x + s * 1.3, y + itemH / 2);
+      ctx.fillText(label(u), x + s * 1.3, y + itemH / 2);
     });
     ctx.restore();
   }

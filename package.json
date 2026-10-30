@@ -9,6 +9,8 @@
   "scripts": {
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "bench": "pnpm --filter @pd/bench bench"
+    "bench": "pnpm --filter @pd/bench bench",
+    "dev:web": "pnpm --filter @pd/web dev",
+    "build:web": "pnpm --filter @pd/web build"
   }
 }
