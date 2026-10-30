@@ -17,9 +17,15 @@ export interface PeriodOptions {
   edgeThreshold: number;
   /** Minimum share of edge energy on grid lines to accept a period. */
   minScore: number;
+  /**
+   * Minimum share of the period's grid lines that actually carry edges. Real pixel art has edges
+   * on many grid lines; a flat logo block has only its own few borders, which every divisor of
+   * their spacing "explains" perfectly.
+   */
+  minOccupied: number;
 }
 
-const DEFAULTS: PeriodOptions = { minPeriod: 2, maxPeriod: 64, edgeThreshold: 48, minScore: 0.85 };
+const DEFAULTS: PeriodOptions = { minPeriod: 2, maxPeriod: 64, edgeThreshold: 48, minScore: 0.85, minOccupied: 0.25 };
 
 function edgeProfiles(img: RgbaImage, threshold: number): { px: Float64Array; py: Float64Array } {
   const { data, width: w, height: h } = img;
@@ -43,18 +49,25 @@ function edgeProfiles(img: RgbaImage, threshold: number): { px: Float64Array; py
   return { px, py };
 }
 
-function bestPhase(profile: Float64Array, p: number): { phase: number; energy: number } {
+function bestPhase(profile: Float64Array, p: number): { phase: number; energy: number; lines: number; occupied: number } {
   const bins = new Float64Array(p);
   for (let i = 1; i < profile.length; i++) bins[i % p] += profile[i];
   let phase = 0;
   for (let k = 1; k < p; k++) if (bins[k] > bins[phase]) phase = k;
-  return { phase, energy: bins[phase] };
+  let lines = 0;
+  let occupied = 0;
+  for (let i = phase === 0 ? p : phase; i < profile.length; i += p) {
+    lines++;
+    if (profile[i] > 0) occupied++;
+  }
+  return { phase, energy: bins[phase], lines, occupied };
 }
 
 /**
  * Detect an integer pixel-art upscaling period: edges of upscaled pixel art fall only on lines
  * x ≡ φ (mod p). Returns the largest period whose grid lines carry >= minScore of all edge
- * energy on both axes (divisors of the true period also score high, multiples do not), or null.
+ * energy on both axes (divisors of the true period also score high, multiples do not) and whose
+ * grid lines are at least minOccupied edged (rejects flat blocks), or null.
  */
 export function detectPixelPeriod(img: RgbaImage, options?: Partial<PeriodOptions>): PixelPeriod | null {
   const o = { ...DEFAULTS, ...options };
@@ -70,7 +83,8 @@ export function detectPixelPeriod(img: RgbaImage, options?: Partial<PeriodOption
     const bx = bestPhase(px, p);
     const by = bestPhase(py, p);
     const score = (bx.energy + by.energy) / (tx + ty);
-    if (score >= o.minScore) found = { period: p, offsetX: bx.phase, offsetY: by.phase, score };
+    const occupied = (bx.occupied + by.occupied) / Math.max(1, bx.lines + by.lines);
+    if (score >= o.minScore && occupied >= o.minOccupied) found = { period: p, offsetX: bx.phase, offsetY: by.phase, score };
   }
   return found;
 }

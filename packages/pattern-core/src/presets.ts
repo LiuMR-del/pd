@@ -131,7 +131,11 @@ export function presetOptions(style: Style, size: SizePreset = 'balanced'): Patt
 export function resolveOptions(opts: PatternOptions = {}): ResolvedOptions {
   const style = opts.style ?? BASE_OPTIONS.style;
   const merged: ResolvedOptions = { ...BASE_OPTIONS, ...STYLE_PRESETS[style], style };
-  for (const [k, v] of Object.entries(opts)) if (v !== undefined) (merged as unknown as Record<string, unknown>)[k] = v;
+  // Object.keys (ES2015) rather than Object.entries: the WeChat Worker runtime is the floor
+  for (const k of Object.keys(opts)) {
+    const v = (opts as Record<string, unknown>)[k];
+    if (v !== undefined) (merged as unknown as Record<string, unknown>)[k] = v;
+  }
   const num = (name: string, v: unknown) => {
     if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`option ${name} must be a finite number, got ${String(v)}`);
     return v;

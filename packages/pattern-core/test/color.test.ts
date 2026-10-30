@@ -108,7 +108,7 @@ describe('color conversion', () => {
 describe('matcher', () => {
   // deterministic pseudo-random
   let seed = 42;
-  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const rnd = () => ((seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff);
   const hex = () => rgbToHex([rnd() * 255, rnd() * 255, rnd() * 255]);
   const palette = preparePalette(Array.from({ length: 80 }, (_, i) => ({ key: `C${i}`, hex: hex() })));
 

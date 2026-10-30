@@ -78,7 +78,7 @@ describe('generatePattern', () => {
   it('pixel style aligns to the detected period', () => {
     const colors: [number, number, number][] = [[255, 255, 255], [0, 0, 0], [224, 32, 32], [240, 208, 32]];
     let seed = 3;
-    const art = Array.from({ length: 16 * 12 }, () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % 4));
+    const art = Array.from({ length: 16 * 12 }, () => ((seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) % 4));
     const img = makeImage(16 * 5, 12 * 5, (x, y) => colors[art[Math.floor(y / 5) * 16 + Math.floor(x / 5)]]);
     const r = generatePattern(img, BASIC_PALETTE, { ...presetOptions('pixel', 'detail'), maxColors: 0, autoCrop: false });
     checkResult(r);

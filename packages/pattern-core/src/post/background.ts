@@ -35,7 +35,8 @@ function perimeter(cols: number, rows: number): number[] {
  * meaningful share of the border as background, then flood-fill inward (4-connected) through cells
  * that are close to their neighbor (local step <= tolerance) and to the seed cluster color
  * (<= 2 x tolerance). Supports several background colors and soft gradients. Seeds are limited to
- * long contiguous border runs (see minRunRatio).
+ * long contiguous border runs (see minRunRatio), and only from the dominant border color, colors
+ * that reach the top edge, or colors continuing those along the border. Grids under 3 rows or columns are left alone.
  * Sets removed cells to -1 and returns how many were removed.
  */
 export function removeBackground(
@@ -46,6 +47,9 @@ export function removeBackground(
   distance: (a: ColorPoint, b: ColorPoint) => number,
   opts: BackgroundOptions,
 ): number {
+  // with fewer than 3 rows or columns every cell is a border cell and the cyclic perimeter
+  // wraps onto itself, so there is no inside to protect
+  if (cols < 3 || rows < 3) return 0;
   const border = perimeter(cols, rows);
   const clusters: { ref: ColorPoint; members: number[] }[] = [];
   const clusterAt = new Int32Array(border.length).fill(-1);
@@ -81,10 +85,37 @@ export function removeBackground(
   const longest = new Map<number, number>();
   for (const r of runs) longest.set(r.ci, Math.max(longest.get(r.ci) ?? 0, r.len));
 
+  // Only the dominant border color, colors that also reach the top edge, and colors that continue
+  // one of those along the border (a gradient) may seed. A subject spanning a whole edge is nearly
+  // always at the bottom (shoulders of a portrait, a table) and differs sharply from the background
+  // next to it, while background reaches the top or blends into a part that does.
+  let dominant = 0;
+  clusters.forEach((c, ci) => {
+    if (c.members.length > clusters[dominant].members.length) dominant = ci;
+  });
+  const accepted = clusters.map((c, ci) => ci === dominant || c.members.some((i) => i < cols));
+  for (let changed = true; changed; ) {
+    changed = false;
+    runs.forEach((r, k) => {
+      if (accepted[r.ci]) return;
+      const near = [runs[(k + runs.length - 1) % runs.length], runs[(k + 1) % runs.length]];
+      const adjacent = (n: (typeof runs)[number]) => {
+        // neighbor run must touch this one on the perimeter (no empty border cells in between)
+        const touches = (n.start + n.len) % P === r.start || (r.start + r.len) % P === n.start;
+        return touches && accepted[n.ci] && distance(clusters[n.ci].ref, clusters[r.ci].ref) <= opts.tolerance * 2;
+      };
+      if (near.some(adjacent)) {
+        accepted[r.ci] = true;
+        changed = true;
+      }
+    });
+  }
+
   const owner = new Int32Array(cols * rows).fill(-1);
   const stack: number[] = [];
   for (const r of runs) {
     if (clusters[r.ci].members.length / borderFilled < opts.minBorderShare) continue;
+    if (!accepted[r.ci]) continue;
     if (r.len < Math.max(2, opts.minRunRatio * longest.get(r.ci)!)) continue;
     for (let k = 0; k < r.len; k++) {
       const i = border[(r.start + k) % P];

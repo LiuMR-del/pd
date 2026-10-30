@@ -52,6 +52,22 @@ function planGrid(image: RgbaImage, o: ReturnType<typeof resolveOptions>, meta: 
 export function generatePattern(image: RgbaImage, paletteInput: readonly PaletteInput[], options: PatternOptions = {}): PatternResult {
   const o = resolveOptions(options);
   const now = options.now ?? defaultNow;
+  return markEmpty(withFitSubject(image, paletteInput, o, now));
+}
+
+/**
+ * Flag results without any bead so callers can explain them: meta.empty, and meta.emptyReason
+ * 'background' (everything was removed as background) or 'transparent' (no opaque cell at all).
+ */
+function markEmpty(r: PatternResult): PatternResult {
+  let filled = false;
+  for (let i = 0; i < r.cells.length && !filled; i++) filled = r.cells[i] !== EMPTY_CELL;
+  r.meta.empty = !filled;
+  r.meta.emptyReason = filled ? null : Number(r.meta.backgroundRemoved ?? 0) > 0 ? 'background' : 'transparent';
+  return r;
+}
+
+function withFitSubject(image: RgbaImage, paletteInput: readonly PaletteInput[], o: ReturnType<typeof resolveOptions>, now: () => number): PatternResult {
   const first = runPipeline(image, paletteInput, o, now);
   if (!o.fitSubject || !o.removeBackground || (o.cols && o.rows) || o.style === 'pixel') return first;
   const subject = subjectRect(first, image);

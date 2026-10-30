@@ -50,7 +50,7 @@ describe('resampleLinear', () => {
 
 describe('detectPixelPeriod', () => {
   let seed = 7;
-  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % 6);
+  const rnd = () => ((seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) % 6);
   const art = Array.from({ length: 24 * 20 }, () => rnd());
   const colors: [number, number, number][] = [
     [255, 255, 255],
