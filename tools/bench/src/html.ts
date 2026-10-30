@@ -106,7 +106,7 @@ document.getElementById('agree').innerHTML = table(R.agreement || [], [
   ];
   const items = [...new Set(CR.map(r => r.item))];
   const rows = items.flatMap(pick);
-  const cols = [['图', r => r.item], ['组别 / 预设', r => r.group + ' / ' + r.preset], ['网格', r => r.cols + '×' + r.rows], ['用色', r => r.metrics.colors], ['ΔE00', r => f(r.metrics.meanDE00)], ['ΔEok', r => f(r.metrics.meanDEok)], ['ΔE CAM16', r => f(r.metrics.meanDEcam)], ['孤立', r => pct(r.metrics.isolatedRatio)], ['暗线召回', r => pct(r.metrics.darkRecall)], ['色值偏差 均/最大', r => r.snapMeanDE === undefined ? '' : f(r.snapMeanDE) + ' / ' + f(r.snapMaxDE)]];
+  const cols = [['图', r => r.item], ['组别 / 预设', r => r.group + ' / ' + r.preset], ['网格', r => r.cols + '×' + r.rows], ['用色', r => r.metrics.colors], ['ΔE00', r => f(r.metrics.meanDE00)], ['ΔEok', r => f(r.metrics.meanDEok)], ['ΔE CAM16', r => f(r.metrics.meanDEcam)], ['孤立', r => pct(r.metrics.isolatedRatio)], ['暗线召回', r => pct(r.metrics.darkRecall)], ['色值偏差 均/最大', r => r.snapMeanDE === undefined || (r.colorsTable && !r.colorsTable.length) ? '' : f(r.snapMeanDE) + ' / ' + f(r.snapMaxDE)]];
   const avgRows = agg(rows, r => r.group + ' / ' + r.preset).map(a => ({ key: a.key, a }));
   document.getElementById('comp').innerHTML = '<div class="muted">' + items.length + ' 张图平均</div>' + table(avgRows, [['组别 / 预设', r => r.key], ['ΔE00', r => f(r.a.de)], ['ΔEok', r => f(r.a.deok)], ['ΔE CAM16', r => f(r.a.decam)], ['用色', r => f(r.a.colors, 1)], ['孤立', r => pct(r.a.iso)], ['暗线召回', r => pct(r.a.dark)]]) + table(rows, cols);
 })();

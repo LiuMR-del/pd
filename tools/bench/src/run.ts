@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { cpus } from 'node:os';
 import { join } from 'node:path';
 import {
+  EMPTY_CELL,
   baselinePattern,
   createMatcher,
   generatePattern,
@@ -304,13 +305,55 @@ interface CompetitorRecord extends RunRecord {
   colorsTable: { hex: string; nearestKey: string; nearestHex: string; deltaE: number; count: number }[];
 }
 
-const SOURCE_LABELS: Record<string, string> = { douge: '豆格', pindoule: '今天拼豆了吗' };
+const SOURCE_LABELS: Record<string, string> = { douge: '豆格', pindoule: '今天拼豆了吗', 'pindoule-replica': '今天拼豆了吗（本地复刻·近似）' };
+
+/** Grid JSON written by an external runner: palette indices, -1 = empty. */
+interface CompetitorGridJson {
+  cols: number;
+  rows: number;
+  cells: number[];
+  palette: { key: string; hex: string }[];
+  preset?: string;
+  notes?: string[];
+  /** Original-image rectangle covered by the grid (defaults to the whole image). */
+  sourceRegion?: { x: number; y: number; w: number; h: number };
+}
+
+function gridJsonToResult(j: CompetitorGridJson, img: RgbaImage): PatternResult {
+  if (j.cells.length !== j.cols * j.rows) throw new Error(`cells length ${j.cells.length} != ${j.cols}x${j.rows}`);
+  const used = new Map<number, number>();
+  const cells = new Uint16Array(j.cells.length);
+  j.cells.forEach((p, i) => {
+    if (p < 0) {
+      cells[i] = EMPTY_CELL;
+      return;
+    }
+    if (!j.palette[p]) throw new Error(`palette index ${p} out of range`);
+    if (!used.has(p)) used.set(p, used.size);
+    cells[i] = used.get(p)!;
+  });
+  const order = Array.from(used.keys());
+  const counts = order.map(() => 0);
+  for (const c of cells) if (c !== EMPTY_CELL) counts[c]++;
+  return {
+    cols: j.cols,
+    rows: j.rows,
+    cells,
+    palette: order.map((p) => j.palette[p]),
+    stats: order.map((p, i) => ({ ...j.palette[p], count: counts[i] })),
+    sourceGrid: { cols: j.cols, rows: j.rows },
+    offset: { x: 0, y: 0 },
+    sourceRegion: j.sourceRegion ?? { x: 0, y: 0, w: img.width, h: img.height },
+    timings: {},
+    meta: { notes: (j.notes ?? []).join(' | ') || null },
+  };
+}
 
 function runCompetitors(items: BenchItem[], palette: { key: string; hex: string }[]): CompetitorRecord[] {
   if (!existsSync(COMPETITORS_DIR)) return [];
   const out: CompetitorRecord[] = [];
   for (const file of readdirSync(COMPETITORS_DIR).sort()) {
-    const m = /^(.+?)(?:__([A-Za-z0-9-]+))?\.png$/i.exec(file);
+    const m = /^(.+?)(?:__([A-Za-z0-9-]+))?\.(png|json)$/i.exec(file);
     if (!m) continue;
     const it = items.find((i) => i.id === m[1]);
     if (!it) {
@@ -319,22 +362,52 @@ function runCompetitors(items: BenchItem[], palette: { key: string; hex: string 
     }
     const source = m[2] ?? 'competitor';
     const img = readPng(it.path);
-    let ex;
+    let ex: ReturnType<typeof extractGrid> | null = null;
+    let r: PatternResult;
+    let preset = '用户设置';
     try {
-      ex = extractGrid(readPng(join(COMPETITORS_DIR, file)), palette);
+      if (m[3].toLowerCase() === 'json') {
+        const j = JSON.parse(readFileSync(join(COMPETITORS_DIR, file), 'utf8')) as CompetitorGridJson;
+        r = gridJsonToResult(j, img);
+        preset = j.preset ?? preset;
+        // fairness: also run ours on the competitor's own palette (e.g. MARD 221 subset)
+        for (const style of ['cartoon', 'photo'] as const) {
+          const ro = ours('ciede2000', style)(img, j.palette);
+          const n2 = `${it.id}__comp__ours-samepalette-${source}__${style}.png`;
+          writePng(join(OUT_DIR, 'previews', n2), renderPattern(ro, CELL_PX));
+          out.push({
+            item: it.id,
+            category: it.category,
+            group: `ours-ciede2000-k8（同色板 ${j.palette.length} 色）`,
+            preset: style,
+            metric: 'ciede2000+oklab-k8',
+            cols: ro.cols,
+            rows: ro.rows,
+            preview: `previews/${n2}`,
+            metrics: computeMetrics(img, ro, it.maskPath ? readPng(it.maskPath) : undefined),
+            meta: ro.meta,
+            file,
+            snapMaxDE: 0,
+            snapMeanDE: 0,
+            colorsTable: [],
+          });
+        }
+      } else {
+        ex = extractGrid(readPng(join(COMPETITORS_DIR, file)), palette);
+        r = ex.result;
+        r.sourceRegion = { x: 0, y: 0, w: img.width, h: img.height };
+      }
     } catch (err) {
       process.stderr.write(`competitor ${file}: ${(err as Error).message}, skipped\n`);
       continue;
     }
-    const r = ex.result;
-    r.sourceRegion = { x: 0, y: 0, w: img.width, h: img.height };
     const name = `${it.id}__comp__${source}.png`;
     writePng(join(OUT_DIR, 'previews', name), renderPattern(r, CELL_PX));
     out.push({
       item: it.id,
       category: it.category,
       group: SOURCE_LABELS[source] ?? source,
-      preset: '用户设置',
+      preset,
       metric: '-',
       cols: r.cols,
       rows: r.rows,
@@ -342,9 +415,9 @@ function runCompetitors(items: BenchItem[], palette: { key: string; hex: string 
       metrics: computeMetrics(img, r, it.maskPath ? readPng(it.maskPath) : undefined),
       meta: r.meta,
       file,
-      snapMaxDE: ex.maxSnapDE,
-      snapMeanDE: ex.meanSnapDE,
-      colorsTable: ex.colors,
+      snapMaxDE: ex ? ex.maxSnapDE : 0,
+      snapMeanDE: ex ? ex.meanSnapDE : 0,
+      colorsTable: ex ? ex.colors : [],
     });
   }
   return out;
