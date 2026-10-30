@@ -26,6 +26,7 @@ import { COMPETITORS_DIR, IMAGES_DIR, OUT_DIR, SYNTH_DIR } from './paths';
 import { readPng, writePng } from './png';
 import { contactSheet, renderPattern, renderReference } from './render';
 import { generateAll } from './synth';
+import { extractGrid } from './competitor';
 
 export interface BenchItem {
   id: string;
@@ -295,6 +296,60 @@ function agreement(items: BenchItem[]): AgreementRecord[] {
   return out;
 }
 
+// --- competitor sheets supplied by the user (tools/bench/competitors/<itemId>__<source>.png) ---
+interface CompetitorRecord extends RunRecord {
+  file: string;
+  snapMaxDE: number;
+  snapMeanDE: number;
+  colorsTable: { hex: string; nearestKey: string; nearestHex: string; deltaE: number; count: number }[];
+}
+
+const SOURCE_LABELS: Record<string, string> = { douge: '豆格', pindoule: '今天拼豆了吗' };
+
+function runCompetitors(items: BenchItem[], palette: { key: string; hex: string }[]): CompetitorRecord[] {
+  if (!existsSync(COMPETITORS_DIR)) return [];
+  const out: CompetitorRecord[] = [];
+  for (const file of readdirSync(COMPETITORS_DIR).sort()) {
+    const m = /^(.+?)(?:__([A-Za-z0-9-]+))?\.png$/i.exec(file);
+    if (!m) continue;
+    const it = items.find((i) => i.id === m[1]);
+    if (!it) {
+      process.stderr.write(`competitor ${file}: no bench item named ${m[1]}, skipped\n`);
+      continue;
+    }
+    const source = m[2] ?? 'competitor';
+    const img = readPng(it.path);
+    let ex;
+    try {
+      ex = extractGrid(readPng(join(COMPETITORS_DIR, file)), palette);
+    } catch (err) {
+      process.stderr.write(`competitor ${file}: ${(err as Error).message}, skipped\n`);
+      continue;
+    }
+    const r = ex.result;
+    r.sourceRegion = { x: 0, y: 0, w: img.width, h: img.height };
+    const name = `${it.id}__comp__${source}.png`;
+    writePng(join(OUT_DIR, 'previews', name), renderPattern(r, CELL_PX));
+    out.push({
+      item: it.id,
+      category: it.category,
+      group: SOURCE_LABELS[source] ?? source,
+      preset: '用户设置',
+      metric: '-',
+      cols: r.cols,
+      rows: r.rows,
+      preview: `previews/${name}`,
+      metrics: computeMetrics(img, r, it.maskPath ? readPng(it.maskPath) : undefined),
+      meta: r.meta,
+      file,
+      snapMaxDE: ex.maxSnapDE,
+      snapMeanDE: ex.meanSnapDE,
+      colorsTable: ex.colors,
+    });
+  }
+  return out;
+}
+
 function centerSquare(img: RgbaImage): RgbaImage {
   const s = Math.min(img.width, img.height);
   const ox = Math.floor((img.width - s) / 2);
@@ -428,6 +483,8 @@ function main() {
     ),
   );
 
+  process.stdout.write('competitors\n');
+  const competitorRuns = runCompetitors(items, fullPalette);
   const competitors = existsSync(COMPETITORS_DIR) ? readdirSync(COMPETITORS_DIR).filter((f) => /\.(png|jpe?g|webp)$/i.test(f)) : [];
   const results = {
     generatedAt: new Date().toISOString(),
@@ -441,6 +498,7 @@ function main() {
     perf: perfRecords,
     agreement: agreementRecords,
     competitors,
+    competitorRuns,
   };
   writeFileSync(join(OUT_DIR, 'results.json'), JSON.stringify(results, null, 1));
   const csvRows = [...main, ...pixel, ...bg].map((r) =>

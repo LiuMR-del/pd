@@ -45,6 +45,9 @@ export function renderHtml(results: object): string {
 <div class="wrap" id="perf"></div>
 <h2>CIEDE2000：Oklab 预筛 K 个候选 vs 精确搜索</h2>
 <div class="wrap" id="agree"></div>
+<h2>竞品对比（用户提供的导出图，程序还原网格后用同一套指标评分）</h2>
+<div class="muted">竞品颜色按其图纸实际显示色计算，不吸附到我们的色板；「色值偏差」= 竞品显示色与 perler-beads 同色最近色号的 CIEDE2000（反映两家 MARD 色值表的差异）。</div>
+<div class="wrap" id="comp"></div>
 <h2>逐图对比</h2>
 <div class="tabs" id="tabs"></div>
 <div id="gallery"></div>
@@ -94,19 +97,32 @@ document.getElementById('perf').innerHTML = table(R.perf, [
 document.getElementById('agree').innerHTML = table(R.agreement || [], [
   ['色板', r => r.palette], ['K', r => r.k], ['查询数', r => r.queries], ['一致率', r => pct(r.agreement)], ['平均 ΔE00 损失', r => f(r.meanPenalty, 4)], ['最大损失', r => f(r.maxPenalty)], ['精确 ms', r => f(r.exactMs, 0)], ['预筛 ms', r => f(r.prefilterMs, 0)],
 ]);
+(function () {
+  const CR = R.competitorRuns || [];
+  if (!CR.length) { document.getElementById('comp').innerHTML = '<div class="muted">未放入竞品图（tools/bench/competitors/&lt;图片id&gt;__&lt;来源&gt;.png）</div>'; return; }
+  const pick = (item) => [
+    ...CR.filter(r => r.item === item),
+    ...R.main.filter(r => r.item === item && ((r.group === 'ours-ciede2000-k8') || (r.group === 'ours-oklab' && r.preset === 'cartoon') || (r.group === 'baseline' && r.preset === 'cartoon'))),
+  ];
+  const items = [...new Set(CR.map(r => r.item))];
+  const rows = items.flatMap(pick);
+  const cols = [['图', r => r.item], ['组别 / 预设', r => r.group + ' / ' + r.preset], ['网格', r => r.cols + '×' + r.rows], ['用色', r => r.metrics.colors], ['ΔE00', r => f(r.metrics.meanDE00)], ['ΔEok', r => f(r.metrics.meanDEok)], ['ΔE CAM16', r => f(r.metrics.meanDEcam)], ['孤立', r => pct(r.metrics.isolatedRatio)], ['暗线召回', r => pct(r.metrics.darkRecall)], ['色值偏差 均/最大', r => r.snapMeanDE === undefined ? '' : f(r.snapMeanDE) + ' / ' + f(r.snapMaxDE)]];
+  const avgRows = agg(rows, r => r.group + ' / ' + r.preset).map(a => ({ key: a.key, a }));
+  document.getElementById('comp').innerHTML = '<div class="muted">' + items.length + ' 张图平均</div>' + table(avgRows, [['组别 / 预设', r => r.key], ['ΔE00', r => f(r.a.de)], ['ΔEok', r => f(r.a.deok)], ['ΔE CAM16', r => f(r.a.decam)], ['用色', r => f(r.a.colors, 1)], ['孤立', r => pct(r.a.iso)], ['暗线召回', r => pct(r.a.dark)]]) + table(rows, cols);
+})();
 const tabs = document.getElementById('tabs');
 const allCats = ['全部', ...new Set(R.items.map(i => i.category))];
 function show(cat) {
   [...tabs.children].forEach(b => b.classList.toggle('on', b.textContent === cat));
   let h = '';
   for (const it of R.items.filter(i => cat === '全部' || i.category === cat)) {
-    const recs = [...R.main, ...R.pixel].filter(r => r.item === it.id);
+    const recs = [...R.main, ...R.pixel, ...(R.competitorRuns || [])].filter(r => r.item === it.id);
     const comp = R.competitors.filter(c => c.startsWith(it.id));
     h += '<div class="item"><b>' + e(it.id) + '</b> <span class="muted">' + e(it.category) + ' · ' + e(it.note) + '</span><div class="row">';
     h += '<figure><img src="' + it.src + '" loading="lazy"><figcaption>原图</figcaption></figure>';
     h += '<figure><img src="previews/' + it.id + '__main__reference.png" loading="lazy"><figcaption>参考（同网格线性平均，无色板限制）</figcaption></figure>';
     for (const r of recs) h += '<figure><img src="' + r.preview + '" loading="lazy"><figcaption><b>' + r.group + ' / ' + r.preset + '</b><br>' + r.cols + '×' + r.rows + ' · ' + r.metrics.colors + ' 色 · ΔE00 ' + f(r.metrics.meanDE00) + ' · ΔEok ' + f(r.metrics.meanDEok) + ' · CAM16 ' + f(r.metrics.meanDEcam) + '<br>孤立 ' + pct(r.metrics.isolatedRatio) + ' · 暗线 ' + pct(r.metrics.darkRecall) + ' · ' + f(r.metrics.timeMs, 0) + 'ms</figcaption></figure>';
-    for (const c of comp) h += '<figure><img src="../competitors/' + encodeURIComponent(c) + '" loading="lazy"><figcaption><b>竞品截图</b> ' + e(c) + '</figcaption></figure>';
+    for (const c of comp) h += '<figure><img src="../competitors/' + encodeURIComponent(c) + '" loading="lazy"><figcaption><b>竞品原图</b> ' + e(c) + '</figcaption></figure>';
     h += '</div></div>';
   }
   document.getElementById('gallery').innerHTML = h;
