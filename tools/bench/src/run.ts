@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { cpus } from 'node:os';
 import { join } from 'node:path';
 import {
+  BASE_OPTIONS,
   EMPTY_CELL,
   baselinePattern,
   createMatcher,
@@ -143,8 +144,8 @@ const MAIN_GROUPS: Group[] = [
   { group: 'ours-ciede2000', preset: 'photo', metric: 'ciede2000', run: ours('ciede2000', 'photo', { prefilterK: 0 }) },
   { group: 'ours-ciede2000-k8', preset: 'cartoon', metric: 'ciede2000+oklab-k8', run: ours('ciede2000', 'cartoon') },
   { group: 'ours-ciede2000-k8', preset: 'photo', metric: 'ciede2000+oklab-k8', run: ours('ciede2000', 'photo') },
-  // review aid: k=1 (plain area average per cell) vs the default k=3 vote, see report §8
-  { group: 'ours-ciede2000-k8-k1', preset: 'cartoon', metric: 'ciede2000+oklab-k8', run: ours('ciede2000', 'cartoon', { subSamples: 1 }) },
+  // k=3 vote (the v0.4 default) vs the default k=1 area mean + stroke protection, for review
+  { group: 'ours-ciede2000-k8-k3', preset: 'cartoon', metric: 'ciede2000+oklab-k8', run: ours('ciede2000', 'cartoon', { subSamples: 3 }) },
 ];
 
 const PIXEL_GROUPS: Group[] = [
@@ -207,6 +208,8 @@ interface SweepRecord {
   meanDEcam: number;
   isolatedRatio: number;
   darkRecall: number | null;
+  fineDarkRecall: number | null;
+  fineLightRecall: number | null;
   colors: number;
   timeMs: number;
 }
@@ -216,7 +219,10 @@ function sweep(name: string, items: BenchItem[], palette: { key: string; hex: st
   return values.map(([label, opts]) => {
     const ms = imgs.map((img) => computeMetrics(img, generatePattern(img, palette, { longSide: LONG_SIDE, maxColors: MAX_COLORS, ...opts })));
     const avg = (f: (m: Metrics) => number) => ms.reduce((s, m) => s + f(m), 0) / ms.length;
-    const dr = ms.filter((m) => m.darkRecall !== null);
+    const opt = (f: (m: Metrics) => number | null) => {
+      const v = ms.map(f).filter((x): x is number => x !== null);
+      return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+    };
     return {
       sweep: name,
       value: label,
@@ -226,7 +232,9 @@ function sweep(name: string, items: BenchItem[], palette: { key: string; hex: st
       meanDEok: avg((m) => m.meanDEok),
       meanDEcam: avg((m) => m.meanDEcam),
       isolatedRatio: avg((m) => m.isolatedRatio),
-      darkRecall: dr.length ? dr.reduce((s, m) => s + m.darkRecall!, 0) / dr.length : null,
+      darkRecall: opt((m) => m.darkRecall),
+      fineDarkRecall: opt((m) => m.fineDarkRecall),
+      fineLightRecall: opt((m) => m.fineLightRecall),
       colors: avg((m) => m.colors),
       timeMs: avg((m) => m.timeMs),
     };
@@ -510,6 +518,20 @@ function main() {
       ['luma45 ratio0.2', { style: 'cartoon', darkLine: { enabled: true, luma: 45, ratio: 0.2 } }],
       ['luma60 ratio0.3', { style: 'cartoon', darkLine: { enabled: true, luma: 60, ratio: 0.3 } }],
     ]),
+    ...sweep('cartoon: stroke', cartoonish, fullPalette, [
+      ['off', { style: 'cartoon', stroke: { ...BASE_OPTIONS.stroke, enabled: false } }],
+      ['dark only', { style: 'cartoon', stroke: { ...BASE_OPTIONS.stroke, light: false } }],
+      ['dark + light', { style: 'cartoon' }],
+    ]),
+    ...sweep('cartoon: edgeSnap', cartoonish, fullPalette, [
+      ['off', { style: 'cartoon', edgeSnap: { ...BASE_OPTIONS.edgeSnap, enabled: false } }],
+      ['on (minSpread 40)', { style: 'cartoon' }],
+    ]),
+    ...sweep('photo: subSamples k', photoish, fullPalette, [1, 3].map((k) => [`k=${k}`, { style: 'photo', subSamples: k }])),
+    ...sweep('photo: stroke', photoish, fullPalette, [
+      ['off', { style: 'photo', stroke: { ...BASE_OPTIONS.stroke, enabled: false } }],
+      ['dark + light', { style: 'photo' }],
+    ]),
     ...sweep('cartoon: minRegionSize', cartoonish, fullPalette, [0, 2, 3, 4].map((n) => [`N=${n}`, { style: 'cartoon', minRegionSize: n }])),
     ...sweep('cartoon: saliency', cartoonish, fullPalette, [
       ['on', { style: 'cartoon' }],
@@ -575,9 +597,9 @@ function main() {
   };
   writeFileSync(join(OUT_DIR, 'results.json'), JSON.stringify(results, null, 1));
   const csvRows = [...main, ...pixel, ...bg].map((r) =>
-    [r.item, r.category, r.group, r.preset, r.cols, r.rows, r.metrics.meanDE00.toFixed(3), r.metrics.meanDE00Smooth.toFixed(3), r.metrics.meanDEok.toFixed(3), r.metrics.meanDEcam.toFixed(3), r.metrics.colors, r.metrics.isolatedRatio.toFixed(4), r.metrics.darkRecall ?? '', r.metrics.bgMisdelete ?? '', r.metrics.bgResidual ?? '', r.metrics.timeMs.toFixed(1)].join(','),
+    [r.item, r.category, r.group, r.preset, r.cols, r.rows, r.metrics.meanDE00.toFixed(3), r.metrics.meanDE00Smooth.toFixed(3), r.metrics.meanDEok.toFixed(3), r.metrics.meanDEcam.toFixed(3), r.metrics.colors, r.metrics.isolatedRatio.toFixed(4), r.metrics.darkRecall ?? '', r.metrics.fineDarkRecall ?? '', r.metrics.fineLightRecall ?? '', r.metrics.bgMisdelete ?? '', r.metrics.bgResidual ?? '', r.metrics.timeMs.toFixed(1)].join(','),
   );
-  writeFileSync(join(OUT_DIR, 'results.csv'), ['item,category,group,preset,cols,rows,dE00,dE00_smooth,dEok,dEcam16,colors,isolated,dark_recall,bg_misdelete,bg_residual,ms', ...csvRows].join('\n') + '\n');
+  writeFileSync(join(OUT_DIR, 'results.csv'), ['item,category,group,preset,cols,rows,dE00,dE00_smooth,dEok,dEcam16,colors,isolated,dark_recall,fine_dark_recall,fine_light_recall,bg_misdelete,bg_residual,ms', ...csvRows].join('\n') + '\n');
   writeFileSync(join(OUT_DIR, 'index.html'), renderHtml(results));
   process.stdout.write(`done -> ${OUT_DIR}\n`);
 }

@@ -1,6 +1,8 @@
 import type { DistanceMetric } from './color/distance';
 import type { SaliencyOptions } from './reduce/limitColors';
 import type { DarkLineOptions } from './sample/cell';
+import type { EdgeSnapOptions } from './sample/edgeSnap';
+import type { StrokeOptions } from './sample/stroke';
 import { clampLongSide, MAX_LONG_SIDE } from './image/grid';
 
 export type Style = 'cartoon' | 'photo' | 'pixel';
@@ -22,6 +24,10 @@ export interface PatternOptions {
   subSamples?: number;
   centerWeight?: number;
   darkLine?: DarkLineOptions;
+  /** Thin-stroke protection on a near-native grid (outlines and small text thinner than a cell). */
+  stroke?: StrokeOptions;
+  /** Snap anti-aliased cells on hard edges to one side instead of an in-between color. */
+  edgeSnap?: EdgeSnapOptions;
   /** ΔE76 spread below which a cell is matched by its mean color. */
   flatThreshold?: number;
   countExponent?: number;
@@ -40,6 +46,11 @@ export interface PatternOptions {
   /** Background seeds only from border runs >= this fraction of the longest run of that color. */
   backgroundMinRunRatio?: number;
   autoCrop?: boolean;
+  /**
+   * With removeBackground: re-run on the subject's bounding box so the subject fills the requested
+   * long side instead of the cropped remainder of the original grid (doubles the work when it triggers).
+   */
+  fitSubject?: boolean;
   /** Mean alpha (0..1) below which a cell is empty. */
   alphaThreshold?: number;
   /** Pixel style: 'auto' detects the upscale period; a number forces it. */
@@ -59,9 +70,13 @@ export const BASE_OPTIONS: ResolvedOptions = {
   metric: 'ciede2000',
   prefilterK: 8,
   maxColors: 24,
-  subSamples: 3,
+  // v0.5: plain area mean per cell; thin strokes are handled by `stroke` on a finer grid, which
+  // made the k x k vote (k=3) unnecessary and it lost to k=1 on every image category
+  subSamples: 1,
   centerWeight: 2,
   darkLine: { enabled: true, luma: 45, ratio: 0.3, maxNeighborDark: 0.5 },
+  stroke: { enabled: true, dark: true, light: true, contrast: 25, minCoverage: 0.1, maxContext: 0.35, maxDensity: 0.25, contextRadius: 3, maxFine: 8 },
+  edgeSnap: { enabled: true, minContrast: 25, tolerance: 0.15, minSpread: 40 },
   flatThreshold: 6,
   countExponent: 0.65,
   saliency: SALIENCY,
@@ -75,6 +90,7 @@ export const BASE_OPTIONS: ResolvedOptions = {
   backgroundMinBorderShare: 0.2,
   backgroundMinRunRatio: 0.25,
   autoCrop: true,
+  fitSubject: true,
   alphaThreshold: 0.5,
   pixelPeriod: 'auto',
 };
@@ -83,6 +99,7 @@ export const BASE_OPTIONS: ResolvedOptions = {
 export const STYLE_PRESETS: Record<Style, Partial<ResolvedOptions>> = {
   cartoon: {},
   photo: {
+    edgeSnap: { ...BASE_OPTIONS.edgeSnap, enabled: false },
     darkLine: { enabled: false, luma: 45, ratio: 0.3 },
     flatThreshold: 20,
     centerWeight: 1.5,
@@ -133,6 +150,21 @@ export function resolveOptions(opts: PatternOptions = {}): ResolvedOptions {
   merged.subSamples = Math.max(1, Math.min(5, Math.round(num('subSamples', merged.subSamples))));
   merged.dither = Math.max(0, Math.min(1, num('dither', merged.dither)));
   merged.prefilterK = Math.max(0, Math.round(num('prefilterK', merged.prefilterK)));
+  merged.stroke = {
+    ...merged.stroke,
+    contrast: Math.max(1, num('stroke.contrast', merged.stroke.contrast)),
+    minCoverage: Math.max(0.01, Math.min(1, num('stroke.minCoverage', merged.stroke.minCoverage))),
+    maxContext: Math.max(0, Math.min(1, num('stroke.maxContext', merged.stroke.maxContext))),
+    maxDensity: Math.max(0, Math.min(1, num('stroke.maxDensity', merged.stroke.maxDensity))),
+    contextRadius: Math.max(1, Math.min(5, Math.round(num('stroke.contextRadius', merged.stroke.contextRadius)))),
+    maxFine: Math.max(1, Math.min(16, Math.round(num('stroke.maxFine', merged.stroke.maxFine)))),
+  };
+  merged.edgeSnap = {
+    ...merged.edgeSnap,
+    minContrast: Math.max(0, num('edgeSnap.minContrast', merged.edgeSnap.minContrast)),
+    tolerance: Math.max(0, Math.min(1, num('edgeSnap.tolerance', merged.edgeSnap.tolerance))),
+    minSpread: Math.max(0, num('edgeSnap.minSpread', merged.edgeSnap.minSpread)),
+  };
   merged.darkLine = { ...merged.darkLine, ratio: Math.max(0.01, Math.min(1, num('darkLine.ratio', merged.darkLine.ratio))) };
   if (typeof merged.pixelPeriod === 'number') {
     const p = Math.round(num('pixelPeriod', merged.pixelPeriod));

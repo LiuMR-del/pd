@@ -9,6 +9,8 @@ import { autoCrop } from './post/crop';
 import { resolveOptions, type PatternOptions } from './presets';
 import { limitColors } from './reduce/limitColors';
 import { sampleCells } from './sample/cell';
+import { cellSpread, snapEdges } from './sample/edgeSnap';
+import { applyStrokes, detectStrokes } from './sample/stroke';
 import { EMPTY_CELL, type PatternResult, type RgbaImage } from './types';
 
 declare const performance: { now(): number } | undefined;
@@ -19,7 +21,8 @@ function defaultNow(): number {
 }
 
 /** Plan the grid: explicit size, detected pixel-art period, or aspect-ratio grid. */
-function planGrid(image: RgbaImage, o: ReturnType<typeof resolveOptions>, meta: PatternResult['meta']): { cols: number; rows: number; region: Rect } {
+function planGrid(image: RgbaImage, o: ReturnType<typeof resolveOptions>, meta: PatternResult['meta'], subject?: Rect): { cols: number; rows: number; region: Rect } {
+  if (subject) return { ...gridSize(subject.w, subject.h, o.longSide), region: subject };
   const full: Rect = { x: 0, y: 0, w: image.width, h: image.height };
   if (o.cols && o.rows) return { cols: Math.round(o.cols), rows: Math.round(o.rows), region: full };
   if (o.style === 'pixel') {
@@ -49,6 +52,56 @@ function planGrid(image: RgbaImage, o: ReturnType<typeof resolveOptions>, meta: 
 export function generatePattern(image: RgbaImage, paletteInput: readonly PaletteInput[], options: PatternOptions = {}): PatternResult {
   const o = resolveOptions(options);
   const now = options.now ?? defaultNow;
+  const first = runPipeline(image, paletteInput, o, now);
+  if (!o.fitSubject || !o.removeBackground || (o.cols && o.rows) || o.style === 'pixel') return first;
+  const subject = subjectRect(first, image);
+  if (!subject) return first;
+  // second pass on the subject's bounding box, so the subject gets the whole grid (the first pass
+  // spent part of it on background that was removed and cropped away)
+  const second = runPipeline(image, paletteInput, o, now, subject);
+  const removed = (n: PatternResult) => Number(n.meta.backgroundRemoved ?? 0);
+  if (removed(second) === 0 || second.cols * second.rows === 0) return first;
+  // the tighter frame puts more subject on its border, so background removal could take a bite
+  // out of the subject: fall back when the second pass keeps clearly less subject area
+  if (subjectArea(second) < 0.8 * subjectArea(first)) return first;
+  second.meta.fitSubject = true;
+  second.timings.firstPass = first.timings.total ?? 0;
+  second.timings.total = (second.timings.total ?? 0) + (first.timings.total ?? 0);
+  return second;
+}
+
+/** Source-pixel area covered by filled cells. */
+function subjectArea(r: PatternResult): number {
+  const filled = r.stats.reduce((s, c) => s + c.count, 0);
+  return filled * (r.sourceRegion.w / r.sourceGrid.cols) * (r.sourceRegion.h / r.sourceGrid.rows);
+}
+
+/**
+ * Source rectangle of the first pass's content (after background removal + crop) plus one cell
+ * of margin, or null when the content already fills >= 90% of the grid's long side.
+ */
+function subjectRect(r: PatternResult, image: RgbaImage): Rect | null {
+  if (!r.cols || !r.rows || !Number(r.meta.backgroundRemoved ?? 0)) return null;
+  const { cols, rows } = r.sourceGrid;
+  if (Math.max(r.cols, r.rows) / Math.max(cols, rows) >= 0.9) return null;
+  const reg = r.sourceRegion;
+  const cw = reg.w / cols;
+  const ch = reg.h / rows;
+  const x0 = Math.max(reg.x, reg.x + (r.offset.x - 1) * cw);
+  const y0 = Math.max(reg.y, reg.y + (r.offset.y - 1) * ch);
+  const x1 = Math.min(reg.x + reg.w, reg.x + (r.offset.x + r.cols + 1) * cw);
+  const y1 = Math.min(reg.y + reg.h, reg.y + (r.offset.y + r.rows + 1) * ch);
+  const rect = { x: Math.floor(x0), y: Math.floor(y0), w: Math.ceil(x1) - Math.floor(x0), h: Math.ceil(y1) - Math.floor(y0) };
+  return rect.w >= 1 && rect.h >= 1 && rect.x + rect.w <= image.width && rect.y + rect.h <= image.height ? rect : null;
+}
+
+function runPipeline(
+  image: RgbaImage,
+  paletteInput: readonly PaletteInput[],
+  o: ReturnType<typeof resolveOptions>,
+  now: () => number,
+  subject?: Rect,
+): PatternResult {
   const timings: Record<string, number> = {};
   const meta: PatternResult['meta'] = { metric: o.metric, style: o.style };
   const t0 = now();
@@ -64,7 +117,7 @@ export function generatePattern(image: RgbaImage, paletteInput: readonly Palette
   const matcher = createMatcher(palette, o.metric, undefined, mopts);
   lap('palette');
 
-  const { cols, rows, region } = planGrid(image, o, meta);
+  const { cols, rows, region } = planGrid(image, o, meta, subject);
   const k = o.subSamples;
   const sub = resampleLinear(image, cols * k, rows * k, region);
   lap('resample');
@@ -81,6 +134,21 @@ export function generatePattern(image: RgbaImage, paletteInput: readonly Palette
   meta.votedCells = sampled.votedCount;
   meta.darkLineCells = sampled.darkLineCount;
   lap('sample');
+
+  if (o.edgeSnap.enabled && o.style !== 'pixel') {
+    const sub3 = k === 3 ? sub : resampleLinear(image, cols * 3, rows * 3, region);
+    const spread = cellSpread(sub3, cols, rows, o.alphaThreshold);
+    meta.edgeSnapped = snapEdges(sampled.index, sampled.targets, sampled.means, cols, rows, o.edgeSnap, spread);
+  }
+  lap('edgeSnap');
+  if (o.style !== 'pixel') {
+    const strokes = detectStrokes(image, region, cols, rows, o.stroke, o.alphaThreshold, Math.max(4, k + 1));
+    if (strokes) {
+      meta.strokeFine = strokes.fine;
+      meta.strokeCells = applyStrokes(strokes, sampled.index, sampled.targets, palette, matcher, o.stroke.contrast);
+    }
+  }
+  lap('stroke');
 
   let index = sampled.index;
   let allowed: number[] | null = null;

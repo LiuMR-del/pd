@@ -27,6 +27,15 @@ export interface Metrics {
   isolatedRatio: number;
   /** Among cells whose darkest sub-sample is a dark line (L* < 25), share rendered dark (L* < 35). */
   darkRecall: number | null;
+  /**
+   * Fine-detail recall on an 8x-per-cell grid (independent of the k x k averaging): a cell holds
+   * a dark detail when 6%..50% of its fine pixels are >= 30 L* darker than the cell's 75th
+   * percentile; it is recalled when the bead is >= 15 L* darker than that percentile. Light
+   * details mirror this against the 25th percentile. Edges of large areas count on both sides,
+   * so thickening one tone costs recall of the other.
+   */
+  fineDarkRecall: number | null;
+  fineLightRecall: number | null;
   /** Foreground (mask) cells left empty / foreground cells. */
   bgMisdelete: number | null;
   /** Background cells still filled / background cells. */
@@ -47,6 +56,15 @@ export function computeMetrics(image: RgbaImage, r: PatternResult, mask?: RgbaIm
   const region = r.sourceRegion;
   const ref = resampleLinear(image, cols, rows, region);
   const sub = resampleLinear(image, cols * 3, rows * 3, region);
+  const F = 8;
+  const fine = resampleLinear(image, cols * F, rows * F, region);
+  const fineL = new Float32Array(fine.width * fine.height);
+  for (let i = 0; i < fineL.length; i++) fineL[i] = fine.alpha[i] < 0.5 ? NaN : linearToLab([fine.lin[i * 3], fine.lin[i * 3 + 1], fine.lin[i * 3 + 2]])[0];
+  const cellL: number[] = [];
+  let fdTotal = 0;
+  let fdHit = 0;
+  let flTotal = 0;
+  let flHit = 0;
   const palLin = r.palette.map((p) => srgb8ToLinear(hexToRgb(p.hex)!));
   const palLab = palLin.map((l) => linearToLab(l));
   const palOk = palLin.map((l) => linearToOklab(l));
@@ -105,6 +123,33 @@ export function computeMetrics(image: RgbaImage, r: PatternResult, mask?: RgbaIm
         darkTotal++;
         if (palLab[c][0] < 35) darkHit++;
       }
+
+      cellL.length = 0;
+      for (let sy = 0; sy < F; sy++)
+        for (let sx = 0; sx < F; sx++) {
+          const v = fineL[(y * F + sy) * fine.width + x * F + sx];
+          if (!Number.isNaN(v)) cellL.push(v);
+        }
+      if (cellL.length >= 8) {
+        cellL.sort((p, q) => p - q);
+        const p75 = cellL[Math.floor(cellL.length * 0.75)];
+        const p25 = cellL[Math.floor(cellL.length * 0.25)];
+        let nd = 0;
+        let nl = 0;
+        for (const v of cellL) {
+          if (v <= p75 - 30) nd++;
+          if (v >= p25 + 30) nl++;
+        }
+        const beadL = palLab[c][0];
+        if (nd >= 0.06 * cellL.length && nd < 0.5 * cellL.length) {
+          fdTotal++;
+          if (beadL <= p75 - 15) fdHit++;
+        }
+        if (nl >= 0.06 * cellL.length && nl < 0.5 * cellL.length) {
+          flTotal++;
+          if (beadL >= p25 + 15) flHit++;
+        }
+      }
       n++;
     }
   }
@@ -142,6 +187,8 @@ export function computeMetrics(image: RgbaImage, r: PatternResult, mask?: RgbaIm
     filled: n,
     isolatedRatio: n ? isolated / n : 0,
     darkRecall: darkTotal >= 5 ? darkHit / darkTotal : null,
+    fineDarkRecall: fdTotal >= 5 ? fdHit / fdTotal : null,
+    fineLightRecall: flTotal >= 5 ? flHit / flTotal : null,
     bgMisdelete,
     bgResidual,
     timeMs: r.timings.total ?? 0,

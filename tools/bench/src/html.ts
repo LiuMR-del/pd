@@ -68,7 +68,7 @@ function agg(recs, keyFn) {
   for (const r of recs) { const k = keyFn(r); if (!m.has(k)) m.set(k, []); m.get(k).push(r); }
   return [...m.entries()].map(([k, rs]) => {
     const avg = (g) => { const v = rs.map(g).filter(x => x !== null && x !== undefined); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
-    return { key: k, n: rs.length, de: avg(r => r.metrics.meanDE00), des: avg(r => r.metrics.meanDE00Smooth), deok: avg(r => r.metrics.meanDEok), decam: avg(r => r.metrics.meanDEcam), colors: avg(r => r.metrics.colors), iso: avg(r => r.metrics.isolatedRatio), dark: avg(r => r.metrics.darkRecall), mis: avg(r => r.metrics.bgMisdelete), res: avg(r => r.metrics.bgResidual), ms: avg(r => r.metrics.timeMs) };
+    return { key: k, n: rs.length, de: avg(r => r.metrics.meanDE00), des: avg(r => r.metrics.meanDE00Smooth), deok: avg(r => r.metrics.meanDEok), decam: avg(r => r.metrics.meanDEcam), colors: avg(r => r.metrics.colors), iso: avg(r => r.metrics.isolatedRatio), dark: avg(r => r.metrics.darkRecall), fd: avg(r => r.metrics.fineDarkRecall), fl: avg(r => r.metrics.fineLightRecall), mis: avg(r => r.metrics.bgMisdelete), res: avg(r => r.metrics.bgResidual), ms: avg(r => r.metrics.timeMs) };
   });
 }
 const cats = [...new Set(R.main.map(r => r.category))];
@@ -77,7 +77,7 @@ for (const cat of ['全部', ...cats]) {
   const recs = cat === '全部' ? R.main : R.main.filter(r => r.category === cat);
   const rows = agg(recs, r => r.group + ' / ' + r.preset);
   sum += '<div class="muted">' + cat + '（' + new Set(recs.map(r => r.item)).size + ' 张）</div>' + table(rows, [
-    ['组别 / 预设', r => r.key], ['ΔE00', r => f(r.de)], ['平滑ΔE00', r => f(r.des)], ['ΔEok', r => f(r.deok)], ['ΔE CAM16', r => f(r.decam)], ['用色', r => f(r.colors, 1)], ['孤立', r => pct(r.iso)], ['暗线召回', r => pct(r.dark)], ['耗时ms', r => f(r.ms, 0)],
+    ['组别 / 预设', r => r.key], ['ΔE00', r => f(r.de)], ['平滑ΔE00', r => f(r.des)], ['ΔEok', r => f(r.deok)], ['ΔE CAM16', r => f(r.decam)], ['用色', r => f(r.colors, 1)], ['孤立', r => pct(r.iso)], ['暗线召回', r => pct(r.dark)], ['细节召回 暗/亮', r => pct(r.fd) + ' / ' + pct(r.fl)], ['耗时ms', r => f(r.ms, 0)],
   ]);
 }
 document.getElementById('summary').innerHTML = sum;
@@ -88,7 +88,7 @@ document.getElementById('pixel').innerHTML = table(R.pixel, [
   ['图', r => r.item], ['组别', r => r.group], ['网格', r => r.cols + '×' + r.rows], ['检测周期', r => f(r.meta.pixelPeriod, 0)], ['ΔE00', r => f(r.metrics.meanDE00)], ['用色', r => r.metrics.colors], ['孤立', r => pct(r.metrics.isolatedRatio)],
 ]);
 document.getElementById('sweeps').innerHTML = table(R.sweeps, [
-  ['扫描', r => r.sweep], ['取值', r => r.value], ['图数', r => r.items], ['ΔE00', r => f(r.meanDE00)], ['平滑ΔE00', r => f(r.meanDE00Smooth)], ['ΔEok', r => f(r.meanDEok)], ['ΔE CAM16', r => f(r.meanDEcam)], ['孤立', r => pct(r.isolatedRatio)], ['暗线召回', r => pct(r.darkRecall)], ['用色', r => f(r.colors, 1)], ['耗时ms', r => f(r.timeMs, 0)],
+  ['扫描', r => r.sweep], ['取值', r => r.value], ['图数', r => r.items], ['ΔE00', r => f(r.meanDE00)], ['平滑ΔE00', r => f(r.meanDE00Smooth)], ['ΔEok', r => f(r.meanDEok)], ['ΔE CAM16', r => f(r.meanDEcam)], ['孤立', r => pct(r.isolatedRatio)], ['暗线召回', r => pct(r.darkRecall)], ['细节召回 暗/亮', r => pct(r.fineDarkRecall) + ' / ' + pct(r.fineLightRecall)], ['用色', r => f(r.colors, 1)], ['耗时ms', r => f(r.timeMs, 0)],
 ]);
 document.getElementById('perf').innerHTML = table(R.perf, [
   ['用例', r => r.case], ['网格', r => r.grid], ['色板', r => r.paletteSize], ['首次ms', r => f(r.coldMs, 0)], ['中位ms', r => f(r.medianMs, 0)], ['阶段', r => Object.entries(r.stages).map(([k, v]) => k + ' ' + v.toFixed(0)).join(' · ')],
@@ -106,7 +106,7 @@ document.getElementById('agree').innerHTML = table(R.agreement || [], [
   ];
   const items = [...new Set(CR.map(r => r.item))];
   const rows = items.flatMap(pick);
-  const cols = [['图', r => r.item], ['组别 / 预设', r => r.group + ' / ' + r.preset], ['网格', r => r.cols + '×' + r.rows], ['用色', r => r.metrics.colors], ['ΔE00', r => f(r.metrics.meanDE00)], ['ΔEok', r => f(r.metrics.meanDEok)], ['ΔE CAM16', r => f(r.metrics.meanDEcam)], ['孤立', r => pct(r.metrics.isolatedRatio)], ['暗线召回', r => pct(r.metrics.darkRecall)], ['色值偏差 均/最大', r => r.snapMeanDE === undefined || (r.colorsTable && !r.colorsTable.length) ? '' : f(r.snapMeanDE) + ' / ' + f(r.snapMaxDE)]];
+  const cols = [['图', r => r.item], ['组别 / 预设', r => r.group + ' / ' + r.preset], ['网格', r => r.cols + '×' + r.rows], ['用色', r => r.metrics.colors], ['ΔE00', r => f(r.metrics.meanDE00)], ['ΔEok', r => f(r.metrics.meanDEok)], ['ΔE CAM16', r => f(r.metrics.meanDEcam)], ['孤立', r => pct(r.metrics.isolatedRatio)], ['暗线召回', r => pct(r.metrics.darkRecall)], ['细节召回 暗/亮', r => pct(r.metrics.fineDarkRecall) + ' / ' + pct(r.metrics.fineLightRecall)], ['色值偏差 均/最大', r => r.snapMeanDE === undefined || (r.colorsTable && !r.colorsTable.length) ? '' : f(r.snapMeanDE) + ' / ' + f(r.snapMaxDE)]];
   const avgRows = agg(rows, r => r.group + ' / ' + r.preset).map(a => ({ key: a.key, a }));
   document.getElementById('comp').innerHTML = '<div class="muted">' + items.length + ' 张图平均</div>' + table(avgRows, [['组别 / 预设', r => r.key], ['ΔE00', r => f(r.a.de)], ['ΔEok', r => f(r.a.deok)], ['ΔE CAM16', r => f(r.a.decam)], ['用色', r => f(r.a.colors, 1)], ['孤立', r => pct(r.a.iso)], ['暗线召回', r => pct(r.a.dark)]]) + table(rows, cols);
 })();
@@ -121,7 +121,7 @@ function show(cat) {
     h += '<div class="item"><b>' + e(it.id) + '</b> <span class="muted">' + e(it.category) + ' · ' + e(it.note) + '</span><div class="row">';
     h += '<figure><img src="' + it.src + '" loading="lazy"><figcaption>原图</figcaption></figure>';
     h += '<figure><img src="previews/' + it.id + '__main__reference.png" loading="lazy"><figcaption>参考（同网格线性平均，无色板限制）</figcaption></figure>';
-    for (const r of recs) h += '<figure><img src="' + r.preview + '" loading="lazy"><figcaption><b>' + r.group + ' / ' + r.preset + '</b><br>' + r.cols + '×' + r.rows + ' · ' + r.metrics.colors + ' 色 · ΔE00 ' + f(r.metrics.meanDE00) + ' · ΔEok ' + f(r.metrics.meanDEok) + ' · CAM16 ' + f(r.metrics.meanDEcam) + '<br>孤立 ' + pct(r.metrics.isolatedRatio) + ' · 暗线 ' + pct(r.metrics.darkRecall) + ' · ' + f(r.metrics.timeMs, 0) + 'ms</figcaption></figure>';
+    for (const r of recs) h += '<figure><img src="' + r.preview + '" loading="lazy"><figcaption><b>' + r.group + ' / ' + r.preset + '</b><br>' + r.cols + '×' + r.rows + ' · ' + r.metrics.colors + ' 色 · ΔE00 ' + f(r.metrics.meanDE00) + ' · ΔEok ' + f(r.metrics.meanDEok) + ' · CAM16 ' + f(r.metrics.meanDEcam) + '<br>孤立 ' + pct(r.metrics.isolatedRatio) + ' · 暗线 ' + pct(r.metrics.darkRecall) + ' · 细节 ' + pct(r.metrics.fineDarkRecall) + '/' + pct(r.metrics.fineLightRecall) + ' · ' + f(r.metrics.timeMs, 0) + 'ms</figcaption></figure>';
     for (const c of comp) h += '<figure><img src="../competitors/' + encodeURIComponent(c) + '" loading="lazy"><figcaption><b>竞品原图</b> ' + e(c) + '</figcaption></figure>';
     h += '</div></div>';
   }

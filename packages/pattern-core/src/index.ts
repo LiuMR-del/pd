@@ -8,6 +8,8 @@ export * from './image/grid';
 export * from './image/resample';
 export * from './image/period';
 export * from './sample/cell';
+export * from './sample/stroke';
+export * from './sample/edgeSnap';
 export * from './reduce/limitColors';
 export * from './dither/errorDiffusion';
 export * from './post/cleanup';

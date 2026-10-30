@@ -48,10 +48,31 @@ describe('generatePattern', () => {
 
   it('removes a white background when asked', () => {
     const img = makeImage(100, 100, (x, y) => ((x - 50) ** 2 + (y - 50) ** 2 < 900 ? [32, 160, 64] : [255, 255, 255]));
-    const r = generatePattern(img, BASIC_PALETTE, { longSide: 20, removeBackground: true });
+    const r = generatePattern(img, BASIC_PALETTE, { longSide: 20, removeBackground: true, fitSubject: false });
     checkResult(r);
     expect(r.palette.map((p) => p.key)).not.toContain('W');
     expect(r.cols).toBeLessThanOrEqual(13);
+  });
+
+  it('fits the subject to the requested long side after removing the background', () => {
+    const img = makeImage(100, 100, (x, y) => ((x - 50) ** 2 + (y - 50) ** 2 < 900 ? [32, 160, 64] : [255, 255, 255]));
+    const r = generatePattern(img, BASIC_PALETTE, { longSide: 20, removeBackground: true });
+    checkResult(r);
+    expect(r.meta.fitSubject).toBe(true);
+    expect(r.palette.map((p) => p.key)).toEqual(['G']);
+    expect(r.cols).toBeGreaterThanOrEqual(16);
+    expect(r.sourceRegion.w).toBeLessThan(100);
+    expect(r.timings.firstPass).toBeGreaterThanOrEqual(0);
+  });
+
+  it('fits a tall subject in a wide image to the long side', () => {
+    // first pass: 100x50 grid, bar 8x48 cells -> already 96% of the rows, but only 48% of the long side
+    const img = makeImage(400, 200, (x, y) => (x >= 184 && x < 216 && y >= 4 && y < 196 ? [224, 32, 32] : [255, 255, 255]));
+    const r = generatePattern(img, BASIC_PALETTE, { longSide: 100, removeBackground: true });
+    checkResult(r);
+    expect(r.meta.fitSubject).toBe(true);
+    expect(Math.max(r.cols, r.rows)).toBeGreaterThanOrEqual(90);
+    expect(r.palette.map((p) => p.key)).toEqual(['R']);
   });
 
   it('pixel style aligns to the detected period', () => {
