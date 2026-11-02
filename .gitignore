@@ -9,15 +9,10 @@ coverage/
 .idea/
 .vscode/
 
-# bench: real images are CC BY + portraits, not redistributed (see tools/bench/images/README.md)
-tools/bench/images/*.png
 # bench: generated outputs (reproducible via scripts)
 tools/bench/out/
 tools/bench/synthetic/*.png
 tools/bench/synthetic/*.json
-# competitor screenshots are third-party content, local only
-tools/bench/competitors/*
-!tools/bench/competitors/.gitkeep
 
 # python caches from fetch scripts
 __pycache__/

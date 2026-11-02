@@ -47,4 +47,4 @@ pnpm bench          # 跑评测，输出到 tools/bench/out/（需先把测试�
 
 ### 测试图
 
-`tools/bench/images/` 下的测试图为 CC BY 许可的第三方图片，**不随仓库分发**，署名与来源见 `tools/bench/images/manifest.csv`。
+`tools/bench/images/` 下的测试图为 CC BY 许可的第三方图片，已随仓库分发；对外展示或分发时请按 `tools/bench/images/manifest.csv` 注明作者和来源链接。人像类图片仅用于算法评测，不用于产品内素材或宣传。

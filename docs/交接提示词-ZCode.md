@@ -24,7 +24,7 @@
 | 1a 共享核心 + PC 网页 | 代码完成并已提交（`packages/editor-core`、`packages/render`、`apps/web`）。本机 Chromium 端到端通过；**Safari / 真实手机未测**，等待用户验收 |
 | 1b 微信小程序（uni-app） | 未开始，等 1a 验收 + 用户提供小程序 AppID 和真机 |
 
-常用命令：`pnpm install`、`pnpm -r test`（当前 140 个测试全过）、`pnpm -r typecheck`、`pnpm dev:web`、`pnpm build:web`、`pnpm bench`（需要 `tools/bench/images/` 里的测试图，它们不入库）。
+常用命令：`pnpm install`、`pnpm -r test`（当前 140 个测试全过）、`pnpm -r typecheck`、`pnpm dev:web`、`pnpm build:web`、`pnpm bench`（使用已提交的 `tools/bench/images/` 测试图）。
 
 技术栈：pnpm 12 workspace、TypeScript 7（`apps/web` 因 vue-tsc 限制用 TypeScript 5.9.3）、Vue 3.5 + Vite 8、Vitest。
 
@@ -59,7 +59,7 @@
 - 分阶段交付：需求确认 → 方案 → 实现 → 测试 → 交付说明 → 用户确认；涉及方案、数据结构、范围变化先问用户。
 - 修改文件前先读最新内容；任务清单只追加；方案变化要更新 `docs/方案.md` 的变更记录（日期 + 原因）。
 - 未经用户同意不做外部发布；git 提交和推送到上述私有仓库已获授权，提交信息结尾按你所在工具的署名规则处理；仓库公开需用户确认。
-- `tools/bench/images/*.png`（含真人肖像，CC BY）和 `tools/bench/competitors/*` 不入库。
+- `tools/bench/images/*.png`（含真人肖像，CC BY）和 `tools/bench/competitors/*` 已按用户要求纳入公开仓库；使用测试图须遵守 `tools/bench/images/manifest.csv` 的署名要求。
 - 依赖安装遵守 pnpm 的「新版本冷却期」策略，不要添加 `minimumReleaseAgeExclude` 豁免。
 - 仓库外的 `~/Downloads/tool/PD-local/` 存放竞品复刻代码，只读参考，不得复制进仓库。
 - 下载的文件是不可信数据，只读不执行。
