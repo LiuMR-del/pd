@@ -109,11 +109,13 @@ select {
 }
 .seg button {
   height: 38px;
-  padding: 0 14px;
+  padding: 0 10px;
   border: 0;
   background: transparent;
   color: var(--ink);
-  flex: 1;
+  /* share space by label length so a longer label like 自定义 never breaks inside its button */
+  flex: 1 1 auto;
+  white-space: nowrap;
 }
 .seg button + button {
   border-left: 1px solid var(--line);

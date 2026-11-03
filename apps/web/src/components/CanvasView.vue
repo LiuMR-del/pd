@@ -15,6 +15,8 @@ const size = { w: 0, h: 0, dpr: 1 };
 const hover = ref<{ row: number; col: number } | null>(null);
 const spaceHeld = ref(false);
 let fitted = false;
+/** Set once the user zooms or pans; until then a resize (window, rotation) re-fits the view. */
+let viewTouched = false;
 
 const MIN_CELL = 1;
 const MAX_CELL = 80;
@@ -96,7 +98,7 @@ function resize(): void {
   c.height = Math.round(size.h * size.dpr);
   c.style.width = `${size.w}px`;
   c.style.height = `${size.h}px`;
-  if (!fitted && state.doc) fit();
+  if (state.doc && (!fitted || !viewTouched)) fit();
   requestDraw();
 }
 
@@ -108,6 +110,7 @@ function fit(): void {
   ox.value = Math.round((size.w - doc.cols * s) / 2);
   oy.value = Math.round((size.h - doc.rows * s) / 2);
   fitted = true;
+  viewTouched = false;
   requestDraw();
 }
 
@@ -118,6 +121,7 @@ function zoomAt(factor: number, mx: number, my: number): void {
   ox.value = mx - ((mx - ox.value) * next) / old;
   oy.value = my - ((my - oy.value) * next) / old;
   cell.value = next;
+  viewTouched = true;
   requestDraw();
 }
 
@@ -240,6 +244,7 @@ function onPointerMove(e: PointerEvent): void {
   if (g?.kind === 'pan') {
     ox.value += p.x - g.x;
     oy.value += p.y - g.y;
+    viewTouched = true;
     g.x = p.x;
     g.y = p.y;
     requestDraw();

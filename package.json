@@ -13,6 +13,7 @@
     "typecheck": "pnpm -r typecheck",
     "bench": "pnpm --filter @pd/bench bench",
     "dev:web": "pnpm --filter @pd/web dev",
+    "dev:web:lan": "pnpm --filter @pd/web dev --host",
     "build:web": "pnpm --filter @pd/web build"
   }
 }
