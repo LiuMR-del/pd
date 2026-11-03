@@ -17,6 +17,8 @@ describe('web settings', () => {
   it('applies size presets and clamps stored values', () => {
     expect(withSize(defaultSettings(), 'detail')).toMatchObject({ size: 'detail', longSide: 100, maxColors: 36 });
     const n = normalizeSettings({ longSide: 999, maxColors: -3, brand: 'nope', tier: 7, style: 'x' as never, dither: 5 });
-    expect(n).toMatchObject({ longSide: 200, maxColors: 2, brand: 'MARD', tier: 'all', style: 'cartoon', dither: 1 });
+    expect(n).toMatchObject({ longSide: 200, maxColors: 2, brand: 'MARD', tier: 221, style: 'cartoon', dither: 1 });
+    expect(normalizeSettings({ tier: 168 }).tier).toBe(221); // no such MARD kit
+    expect(defaultSettings().tier).toBe(221);
   });
 });

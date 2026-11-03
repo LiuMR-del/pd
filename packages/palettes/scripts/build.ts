@@ -1,54 +1,53 @@
 /**
- * Build data/palettes.json from the vendor perler-beads files.
- * Usage: pnpm --filter @pd/palettes build:data
+ * Build data/palettes.json (generated, git-ignored) from the vendor perler-beads files plus the
+ * MARD corrections in scripts/mard.ts: codes without leading zeros, real retail kit lists, and
+ * MARD color values from data/local/mard-hex.json when it has been fetched on this machine.
+ * Usage: pnpm --filter @pd/palettes build:data   (runs on `pnpm install`; `pnpm palettes:sync` fetches first)
  */
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ciede2000, hexToRgb, srgb8ToLab, type Vec3 } from '@pd/pattern-core';
 import { validatePaletteData, type PaletteColorEntry, type PaletteData, type PaletteTier, type KnownIssue } from '../src/schema';
+import { kitCodes, normalizeMardCode, readKits, readLocalHex } from './mard';
 import { crossCheckVendor, readVendorCsv, readVendorMapping, splitCodes, VENDOR_BRANDS } from './vendor';
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'palettes.json');
-const TIER_SIZES = [24, 48, 72, 96, 120, 144, 168, 221];
-
 const mapping = readVendorMapping();
 const csv = readVendorCsv();
 const csvByMard = new Map(csv.rows.map((r) => [r.MARD, r]));
 
+const localHex = readLocalHex();
 const colors: PaletteColorEntry[] = Object.entries(mapping).map(([hex, codes], id) => {
   const entry: PaletteColorEntry = { id, hex: hex.toUpperCase(), codes: {} };
   for (const b of VENDOR_BRANDS) entry.codes[b] = codes[b];
+  entry.codes.MARD = normalizeMardCode(codes.MARD);
+  const measured = localHex?.colors[entry.codes.MARD];
+  if (measured && measured !== entry.hex) {
+    entry.vendorHex = entry.hex;
+    entry.hex = measured;
+  }
   const row = csvByMard.get(codes.MARD);
   if (row) {
     for (const b of VENDOR_BRANDS) {
-      const extra = splitCodes(row[b]).filter((c) => c !== codes[b]);
+      const extra = splitCodes(row[b])
+        .filter((c) => c !== codes[b])
+        .map((c) => (b === 'MARD' ? normalizeMardCode(c) : c));
       if (extra.length) (entry.altCodes ??= {})[b] = extra;
     }
   }
   return entry;
 });
 
-// Nested tiers by farthest-point sampling under CIEDE2000, seeded with the colors nearest to white and black.
-const labs: Vec3[] = colors.map((c) => srgb8ToLab(hexToRgb(c.hex)!));
-const nearestTo = (lab: Vec3) => labs.reduce((best, l, i) => (ciede2000(l, lab) < ciede2000(labs[best], lab) ? i : best), 0);
-const order: number[] = [nearestTo([100, 0, 0]), nearestTo([0, 0, 0])];
-const minD = labs.map((l) => Math.min(...order.map((o) => ciede2000(l, labs[o]))));
-while (order.length < colors.length) {
-  let best = -1;
-  for (let i = 0; i < colors.length; i++) if (!order.includes(i) && (best < 0 || minD[i] > minD[best])) best = i;
-  order.push(best);
-  for (let i = 0; i < colors.length; i++) minD[i] = Math.min(minD[i], ciede2000(labs[i], labs[best]));
+// Tiers = real MARD retail kits (data/mard-kits.json); other brands use the same colors.
+const idByMard = new Map(colors.map((c) => [c.codes.MARD, c.id]));
+const kits = readKits();
+const tiers: PaletteTier[] = [];
+for (const [size, codes] of kitCodes(kits)) {
+  const missing = codes.filter((c) => !idByMard.has(c));
+  if (missing.length) throw new Error(`kit ${size}: codes not in the palette: ${missing.join(' ')}`);
+  tiers.push({ id: `t${size}`, size, synthetic: false, method: `MARD ${size}-color retail kit (data/mard-kits.json)`, colorIds: codes.map((c) => idByMard.get(c)!).sort((x, y) => x - y) });
 }
-const FPS = 'farthest-point sampling (CIEDE2000), seeds = nearest to white and black; placeholder until official kit lists are available';
-const tiers: PaletteTier[] = TIER_SIZES.filter((s) => s < colors.length).map((size) => ({
-  id: `t${size}`,
-  size,
-  synthetic: true,
-  method: FPS,
-  colorIds: order.slice(0, size).sort((a, b) => a - b),
-}));
-tiers.push({ id: 'all', size: colors.length, synthetic: false, method: 'all colors in the source mapping', colorIds: colors.map((c) => c.id) });
+tiers.push({ id: 'all', size: colors.length, synthetic: false, method: 'all colors incl. special series (pearl, jelly, transparent, glow ...)', colorIds: colors.map((c) => c.id) });
 
 // Known data issues: duplicated codes within a brand (kept as-is, documented)
 const knownIssues: KnownIssue[] = [];
@@ -67,7 +66,11 @@ const data: PaletteData = {
     commit: '2efee730f73dd4eb472ebde443a022d11f98bc21',
     files: 'src/app/colorSystemMapping.json, 色号对应表.csv',
     license: 'AGPL-3.0',
-    changes: 'Restructured into a color array with per-brand codes, altCodes from the CSV, generated tiers and knownIssues. Non-MARD brands are mapped by MARD hex values, not measured.',
+    changes:
+      'Restructured into a color array with per-brand codes, altCodes from the CSV and knownIssues. MARD codes without leading zeros; tiers are the real MARD retail kits. Non-MARD brands are mapped by MARD hex values, not measured.',
+    mardHex: localHex
+      ? `MARD colors from ${localHex.source} (${localHex.url}, fetched ${localHex.fetchedAt}); vendorHex keeps the perler-beads value`
+      : 'perler-beads values (run `pnpm palettes:sync` to use MARD values)',
     generatedBy: 'packages/palettes/scripts/build.ts',
   },
   schemaVersion: 1,

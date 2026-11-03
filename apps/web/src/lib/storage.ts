@@ -70,7 +70,8 @@ export function newId(): string {
   return (crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`).replace(/-/g, '').slice(0, 16);
 }
 
-const SETTINGS_KEY = 'pd-web:settings';
+// v2 (2026-11-03): the palette default changed from all 291 colors to the 221-color kit
+const SETTINGS_KEY = 'pd-web:settings:v2';
 
 export function loadLastSettings(): unknown {
   try {

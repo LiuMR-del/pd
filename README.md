@@ -20,7 +20,8 @@ docs/                    # 方案、任务清单、阶段报告
 
 ```bash
 corepack enable pnpm
-pnpm install
+pnpm install        # 安装依赖，并自动生成色卡数据 packages/palettes/data/palettes.json
+pnpm palettes:sync  # 下载 MARD 色值到本机并重新生成色卡（每台电脑运行一次；不运行时用 perler-beads 色值）
 pnpm -r test        # 单元测试
 pnpm -r typecheck   # 类型检查
 pnpm dev:web        # 本地运行网页，浏览器打开终端里显示的地址

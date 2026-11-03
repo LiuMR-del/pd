@@ -23,7 +23,7 @@ export const UNKNOWN_CODE = '?';
 export interface ColorSystem {
   brands: readonly string[];
   getAllHexValues(): string[];
-  /** brand code -> hex for one brand (e.g. MARD "A01" -> "#FAF4C8"). */
+  /** brand code -> hex for one brand (e.g. MARD "A1" -> "#F9F0CD"). */
   getCodeToHexMapping(brand: string): Map<string, string>;
   /** Hex -> brand code, or "?" when the brand has no such color. */
   getColorKeyByHex(hex: string, brand: string): string;

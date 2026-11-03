@@ -24,7 +24,7 @@
 | 1a 共享核心 + PC 网页 | 代码完成并已提交（`packages/editor-core`、`packages/render`、`apps/web`）。本机 Chromium 端到端通过；**Safari / 真实手机未测**，等待用户验收 |
 | 1b 微信小程序（uni-app） | 未开始，等 1a 验收 + 用户提供小程序 AppID 和真机 |
 
-常用命令：`pnpm install`、`pnpm -r test`（当前 140 个测试全过）、`pnpm -r typecheck`、`pnpm dev:web`、`pnpm build:web`、`pnpm bench`（使用已提交的 `tools/bench/images/` 测试图）。
+常用命令：`pnpm install`（会自动生成色卡数据）、`pnpm palettes:sync`（每台电脑运行一次，下载 MARD 色值，不进 git）、`pnpm -r test`（当前 140 个测试全过）、`pnpm -r typecheck`、`pnpm dev:web`、`pnpm build:web`、`pnpm bench`（使用已提交的 `tools/bench/images/` 测试图）。
 
 技术栈：pnpm 12 workspace、TypeScript 7（`apps/web` 因 vue-tsc 限制用 TypeScript 5.9.3）、Vue 3.5 + Vite 8、Vitest。
 

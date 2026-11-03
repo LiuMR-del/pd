@@ -16,3 +16,7 @@ tools/bench/synthetic/*.json
 
 # python caches from fetch scripts
 __pycache__/
+
+# palettes: generated on install; MARD color values are downloaded per machine (pnpm palettes:sync), not redistributed
+packages/palettes/data/palettes.json
+packages/palettes/data/local/

@@ -32,7 +32,8 @@ export function defaultSettings(): Settings {
     longSide: SIZE_PRESETS.balanced.longSide,
     maxColors: SIZE_PRESETS.balanced.maxColors,
     brand: BRANDS[0],
-    tier: 'all',
+    // the standard MARD kit; 'all' adds special beads (pearl, jelly, transparent ...) most users lack
+    tier: 221,
     removeBackground: false,
     strokeProtect: true,
     dither: null,
@@ -48,7 +49,7 @@ export function normalizeSettings(s: Partial<Settings>): Settings {
   out.longSide = clampInt(out.longSide, 10, 200, d.longSide);
   out.maxColors = clampInt(out.maxColors, 2, 60, d.maxColors);
   if (!BRANDS.includes(out.brand)) out.brand = d.brand;
-  if (out.tier !== 'all' && !listTiers().some((t) => t.size === out.tier)) out.tier = 'all';
+  if (out.tier !== 'all' && !listTiers().some((t) => t.size === out.tier)) out.tier = d.tier;
   out.removeBackground = !!out.removeBackground;
   out.strokeProtect = out.strokeProtect !== false;
   out.dither = out.dither === null || out.dither === undefined ? null : Math.max(0, Math.min(1, Number(out.dither) || 0));
@@ -81,8 +82,8 @@ export function toPatternOptions(s: Settings): PatternOptions {
 }
 
 export function tierLabel(tier: number | 'all'): string {
-  if (tier === 'all') return `全部 ${listTiers().find((t) => t.id === 'all')?.size ?? ''} 色`;
-  return `${tier} 色`;
+  if (tier === 'all') return `全部 ${listTiers().find((t) => t.id === 'all')?.size ?? ''} 色（含珠光、透明等特殊豆）`;
+  return `${tier} 色套装`;
 }
 
 export function settingsSummary(s: Settings): string {

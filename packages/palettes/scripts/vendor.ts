@@ -31,18 +31,22 @@ export function splitCodes(cell: string): string[] {
   return Array.from(new Set(cell.split('/').map((s) => s.trim()).filter(Boolean)));
 }
 
+/** MARD codes are stored without leading zeros (see scripts/mard.ts); compare in that form. */
+const norm = (brand: string, code: string) => (brand === 'MARD' ? code.replace(/^([A-Z]+)0+(\d)/, '$1$2') : code);
+
 /**
- * Cross-check converted data against the vendor files: same hex set, identical primary codes,
- * and every CSV cell equal to [primary, ...altCodes].
+ * Cross-check converted data against the vendor files: same color set (by the vendor hex),
+ * identical primary codes (MARD without leading zeros), and every CSV cell equal to
+ * [primary, ...altCodes].
  */
 export function crossCheckVendor(data: {
   brands: string[];
-  colors: { hex: string; codes: Record<string, string>; altCodes?: Record<string, string[]> }[];
+  colors: { hex: string; vendorHex?: string; codes: Record<string, string>; altCodes?: Record<string, string[]> }[];
 }): string[] {
   const errors: string[] = [];
   const mapping = readVendorMapping();
   const vendorHexes = Object.keys(mapping).map((h) => h.toUpperCase());
-  const ours = new Map(data.colors.map((c) => [c.hex, c]));
+  const ours = new Map(data.colors.map((c) => [c.vendorHex ?? c.hex, c]));
   if (vendorHexes.length !== data.colors.length) errors.push(`color count ${data.colors.length} != vendor ${vendorHexes.length}`);
   for (const [hex, codes] of Object.entries(mapping)) {
     const c = ours.get(hex.toUpperCase());
@@ -50,21 +54,21 @@ export function crossCheckVendor(data: {
       errors.push(`vendor color ${hex} missing`);
       continue;
     }
-    for (const b of VENDOR_BRANDS) if (c.codes[b] !== codes[b]) errors.push(`${hex} ${b}: ${c.codes[b]} != vendor ${codes[b]}`);
+    for (const b of VENDOR_BRANDS) if (c.codes[b] !== norm(b, codes[b])) errors.push(`${hex} ${b}: ${c.codes[b]} != vendor ${codes[b]}`);
   }
   const { header, rows } = readVendorCsv();
   for (const b of VENDOR_BRANDS) if (!header.includes(b)) errors.push(`CSV header lacks ${b}`);
   const byMard = new Map(data.colors.map((c) => [c.codes.MARD, c]));
   if (rows.length !== data.colors.length) errors.push(`CSV rows ${rows.length} != colors ${data.colors.length}`);
   for (const row of rows) {
-    const c = byMard.get(row.MARD);
+    const c = byMard.get(norm('MARD', row.MARD));
     if (!c) {
       errors.push(`CSV MARD ${row.MARD} not in data`);
       continue;
     }
     for (const b of VENDOR_BRANDS) {
       const expected = [c.codes[b], ...(c.altCodes?.[b] ?? [])].join('/');
-      const got = splitCodes(row[b]).join('/');
+      const got = splitCodes(row[b]).map((x) => norm(b, x)).join('/');
       if (expected !== got) errors.push(`CSV ${row.MARD} ${b}: "${row[b]}" vs data "${expected}"`);
     }
   }

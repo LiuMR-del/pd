@@ -9,6 +9,8 @@ export interface PaletteColorEntry {
   codes: Record<string, string>;
   /** Extra codes some sources list for the same color (e.g. CSV "157/70"). */
   altCodes?: Record<string, string[]>;
+  /** perler-beads value, when `hex` was replaced by a MARD value fetched locally. */
+  vendorHex?: string;
 }
 
 export interface PaletteTier {
@@ -42,12 +44,15 @@ const HEX_RE = /^#[0-9A-F]{6}$/;
 /** Structural + consistency checks. Returns a list of human-readable errors (empty = valid). */
 export function validatePaletteData(data: PaletteData): string[] {
   const errors: string[] = [];
-  const seenHex = new Set<string>();
+  const seenHex = new Map<string, PaletteColorEntry>();
   data.colors.forEach((c, i) => {
     if (c.id !== i) errors.push(`color #${i}: id ${c.id} != position`);
     if (!HEX_RE.test(c.hex)) errors.push(`color #${i}: bad hex "${c.hex}"`);
-    if (seenHex.has(c.hex)) errors.push(`color #${i}: duplicate hex ${c.hex}`);
-    seenHex.add(c.hex);
+    // a fetched MARD value may coincide with another bead's screen color (H2 white = T1
+    // transparent, both #FFFFFF); matching then prefers the lower id, i.e. the standard bead
+    const twin = seenHex.get(c.hex);
+    if (twin && !twin.vendorHex && !c.vendorHex) errors.push(`color #${i}: duplicate hex ${c.hex}`);
+    if (!twin) seenHex.set(c.hex, c);
     for (const b of data.brands) {
       const code = c.codes[b];
       if (typeof code !== 'string' || code.trim() === '') errors.push(`color ${c.hex}: missing ${b} code`);
