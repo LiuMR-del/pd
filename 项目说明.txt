@@ -1,0 +1,10 @@
+﻿项目名：拼豆图纸工具（PD）
+用途：把图片转换成带色号的拼豆图纸，可编辑、可导出（PC 网页 + 微信小程序）
+来源：自己开发（私有仓库 https://github.com/LiuMR-del/pd）
+建立时间：2026-10-29
+完成时间：进行中
+最后修改：2026-11-03
+状态：进行中
+对应需求卡片：无
+MVP 范围：图片 → MARD 色号图纸 → 编辑 → 导出 PNG（阶段 1a PC 网页）
+备注：2026-11-03 从 Mac 迁到 Windows；Node / git / pnpm 装在 C:\Data\Project\环境（已加入用户 PATH）。常用命令：pnpm install、pnpm palettes:sync、pnpm -r test、pnpm dev:web、pnpm bench。详细进度见 docs\任务清单.md。
