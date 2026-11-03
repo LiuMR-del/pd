@@ -4,7 +4,7 @@
 建立时间：2026-10-29
 完成时间：进行中
 最后修改：2026-11-04
-状态：进行中
+状态：暂停
 对应需求卡片：无
 MVP 范围：图片 → MARD 色号图纸 → 编辑 → 导出 PNG（阶段 1a PC 网页）
-备注：2026-11-03 从 Mac 迁到 Windows；Node / git / pnpm 装在 C:\Data\Project\环境（已加入用户 PATH）。常用命令：pnpm install、pnpm palettes:sync、pnpm -r test、pnpm dev:web、pnpm dev:web:lan（手机同一 Wi-Fi 访问）、pnpm bench。Android SDK / JDK 17 也装在 环境 目录，但本机模拟器跑不起来（见任务清单 2026-11-04）。详细进度见 docs\任务清单.md。
+备注：2026-11-03 从 Mac 迁到 Windows；Node / git / pnpm 装在 C:\Data\Project\环境（已加入用户 PATH）。常用命令：pnpm install、pnpm palettes:sync、pnpm -r test、pnpm dev:web、pnpm dev:web:lan（手机同一 Wi-Fi 访问）、pnpm bench。2026-11-04 暂停：阶段 1a 网页基本可用，手机刷新后作品丢失待修（见任务清单）；本机 PATH 等系统设置已恢复，重新开工时要把 C:\Data\Project\环境\node 和 git\cmd 加回 PATH（或在命令前临时 set PATH）。详细进度见 docs\任务清单.md。
