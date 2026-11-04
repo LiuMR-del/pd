@@ -36,7 +36,10 @@ async function copy(): Promise<void> {
   <div class="usage">
     <div class="head">
       <span>{{ list.length }} 色 · {{ total.toLocaleString() }} 颗</span>
-      <button class="btn ghost small" @click="copy">复制清单</button>
+      <span class="head-actions">
+        <button class="btn ghost small" @click="state.dialog = 'brand'">换品牌</button>
+        <button class="btn ghost small" @click="copy">复制清单</button>
+      </span>
     </div>
     <p class="help">点色号在画布上突出显示；点「用」设为画笔颜色。</p>
     <ul>
@@ -131,5 +134,9 @@ li.cur .key::after {
 .small {
   height: 32px;
   font-size: 13px;
+}
+.head-actions {
+  display: flex;
+  gap: 2px;
 }
 </style>

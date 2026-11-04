@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import BrandDialog from './components/BrandDialog.vue';
 import CanvasView from './components/CanvasView.vue';
+import ColorPickDialog from './components/ColorPickDialog.vue';
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import CropDialog from './components/CropDialog.vue';
 import ExportDialog from './components/ExportDialog.vue';
+import MakerPreview from './components/MakerPreview.vue';
 import PaletteDialog from './components/PaletteDialog.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
 import Toolbar from './components/Toolbar.vue';
 import UploadHome from './components/UploadHome.vue';
 import UsagePanel from './components/UsagePanel.vue';
 import WorksDialog from './components/WorksDialog.vue';
-import { settingsSummary } from './lib/settings';
+import { KIND_LABELS } from './lib/makers';
+import { settingsSummary, tierLabel } from './lib/settings';
 import { thumbnail } from './lib/image';
 import { flushSave, generate, loadFile, redo, rename, startOver, state, totalBeads, undo, usage, type Tool } from './store';
 
@@ -32,6 +36,9 @@ const summary = computed(() => {
   return `${state.doc.cols} × ${state.doc.rows} 格 · 实际 ${usage().length} 色 · ${totalBeads().toLocaleString()} 颗`;
 });
 const preview = computed(() => (state.source ? thumbnail(state.source.canvas, state.source.width, state.source.height, 1400) : ''));
+const readySummary = computed(() =>
+  state.kind === 'image' ? settingsSummary(state.settings) : `${KIND_LABELS[state.kind]}图纸 · ${state.settings.brand} ${tierLabel(state.settings.tier)}`,
+);
 
 function pick(file: File | undefined): void {
   if (file) void loadFile(file);
@@ -120,15 +127,17 @@ function commitName(e: Event): void {
       <section class="stagecol">
         <Toolbar v-if="state.phase === 'result'" />
         <div v-else class="ready-head">
-          <span class="badge">原图</span>
-          <span class="muted">{{ settingsSummary(state.settings) }}</span>
+          <span class="badge">{{ state.kind === 'image' ? '原图' : `新建${KIND_LABELS[state.kind]}图纸` }}</span>
+          <span class="muted">{{ readySummary }}</span>
         </div>
         <CanvasView v-if="state.phase === 'result'" ref="canvasView" />
+        <MakerPreview v-else-if="state.kind !== 'image'" />
         <div v-else class="ready">
           <img :src="preview" alt="已上传的图片" :style="state.crop ? { objectFit: 'contain' } : {}" />
           <div v-if="state.generating" class="busy" role="status">正在生成…</div>
         </div>
         <p v-if="state.error" class="error" role="alert">{{ state.error }}</p>
+        <p v-else-if="state.kind === 'qr' && state.edited" class="warn-line">二维码图纸改动过，拼之前请先用手机扫一下导出的图确认能扫。</p>
         <footer v-if="summary" class="summary num">{{ summary }}</footer>
       </section>
 
@@ -160,6 +169,8 @@ function commitName(e: Event): void {
     <ExportDialog v-if="state.dialog === 'export' && state.doc" />
     <WorksDialog v-if="state.dialog === 'works'" />
     <PaletteDialog v-if="state.dialog === 'palette' && state.doc" />
+    <BrandDialog v-if="state.dialog === 'brand' && state.doc" />
+    <ColorPickDialog v-if="state.colorPick" />
     <ConfirmDialog />
     <div v-if="state.notice" class="toast" role="status">{{ state.notice }}</div>
   </div>
@@ -299,6 +310,11 @@ function commitName(e: Event): void {
   color: var(--error);
   margin: 8px 0 0;
 }
+.warn-line {
+  color: var(--warn);
+  margin: 8px 0 0;
+  font-size: 14px;
+}
 .panel {
   border-left: 1px solid var(--line);
   background: var(--panel);
@@ -374,7 +390,8 @@ function commitName(e: Event): void {
     padding: 8px 12px;
   }
   .ready,
-  .stagecol :deep(.canvas-wrap) {
+  .stagecol :deep(.canvas-wrap),
+  .stagecol :deep(.maker-preview) {
     min-height: 46dvh;
     flex: none;
     height: 46dvh;

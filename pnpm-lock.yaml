@@ -171,6 +171,9 @@ importers:
       '@pd/editor-core':
         specifier: workspace:*
         version: link:../../packages/editor-core
+      '@pd/makers':
+        specifier: workspace:*
+        version: link:../../packages/makers
       '@pd/palettes':
         specifier: workspace:*
         version: link:../../packages/palettes
@@ -180,6 +183,9 @@ importers:
       '@pd/render':
         specifier: workspace:*
         version: link:../../packages/render
+      jsqr:
+        specifier: 1.4.0
+        version: 1.4.0
       vue:
         specifier: 3.5.44
         version: 3.5.44(typescript@5.9.3)
@@ -206,6 +212,25 @@ importers:
         specifier: workspace:*
         version: link:../pattern-core
     devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@24.19.2)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))
+
+  packages/makers:
+    dependencies:
+      '@pd/pattern-core':
+        specifier: workspace:*
+        version: link:../pattern-core
+    devDependencies:
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      jsqr:
+        specifier: 1.4.0
+        version: 1.4.0
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -823,6 +848,9 @@ packages:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
+
+  jsqr@1.4.0:
+    resolution: {integrity: sha512-dxLob7q65Xg2DvstYkRpkYtmKm2sPJ9oFhrhmudT1dZvNFFTlroai3AWSpLey/w5vMcLBXRgOJsbXpdN9HzU/A==}
 
   lightningcss-android-arm64@1.33.0:
     resolution: {integrity: sha512-gEpRTalKdosp4Bb8qWtc2iOgE5SeIHlpS1up9bFq2wAyYhl1UdTObYiHe98zEM9SQvSoqQZ1IQD0JNpg3Ml5pg==}
@@ -1462,6 +1490,8 @@ snapshots:
 
   fsevents@2.3.3:
     optional: true
+
+  jsqr@1.4.0: {}
 
   lightningcss-android-arm64@1.33.0:
     optional: true

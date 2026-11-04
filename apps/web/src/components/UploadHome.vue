@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { openWork, refreshWorks, removeWork, state } from '../store';
+import { openWork, refreshWorks, removeWork, startMaker, state } from '../store';
 
 const emit = defineEmits<{ pick: [File | undefined] }>();
 const over = ref(false);
@@ -31,6 +31,16 @@ function fmt(t: number): string {
       <span class="sub">或把图片拖到这里 · JPG、PNG、WebP，最大 30MB</span>
       <span class="sub">图片只在这台设备上处理，不会上传</span>
     </label>
+    <div class="makers">
+      <button class="maker" @click="startMaker('text')">
+        <span class="t">文字转图纸</span>
+        <span class="sub">名字、短句，可加描边和背景</span>
+      </button>
+      <button class="maker" @click="startMaker('qr')">
+        <span class="t">二维码转图纸</span>
+        <span class="sub">网址或文字，拼好能扫；也能识别二维码图片</span>
+      </button>
+    </div>
     <p v-if="state.error" class="error" role="alert">{{ state.error }}</p>
 
     <section v-if="state.works.length" class="recent">
@@ -95,6 +105,34 @@ h1 {
 .sub {
   color: var(--muted);
   font-size: 14px;
+}
+.makers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.maker {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  text-align: left;
+}
+.maker:hover {
+  border-color: var(--primary);
+}
+.maker .t {
+  font-weight: 700;
+  color: var(--primary);
+}
+@media (max-width: 480px) {
+  .makers {
+    grid-template-columns: 1fr;
+  }
 }
 .recent h2 {
   font-size: 16px;

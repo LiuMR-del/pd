@@ -1,15 +1,27 @@
 import { markRaw, reactive, watch } from 'vue';
-import { beadCount, colorUsage, docFromDraft, docFromPattern, docToDraft, PatternEditor, type ColorUsage, type PatternDoc } from '@pd/editor-core';
+import { MakerError } from '@pd/makers';
+import { applyBrandConversion, beadCount, colorUsage, docFromDraft, docFromPattern, docToDraft, PatternEditor, type ColorUsage, type ConversionPlan, type PatternDoc } from '@pd/editor-core';
 import { getPalette } from '@pd/palettes';
+import type { PatternResult } from '@pd/pattern-core';
 import { drawPattern } from '@pd/render';
 import { CancelledError, Generator } from './lib/generator';
 import { canvasToBlob, decodeImage, thumbnail, toRgba, type Rect, type SourceImage } from './lib/image';
+import { defaultQrSettings, defaultTextSettings, makePattern, makerName, normalizeQr, normalizeText, type ColorId, type Kind, type QrSettings, type TextSettings } from './lib/makers';
 import { normalizeSettings, toPatternOptions, type Settings } from './lib/settings';
 import { deleteWork as dbDelete, getWork, listWorks, loadLastSettings, newId, putWork, saveLastSettings, type WorkSummary } from './lib/storage';
 
 export type Tool = 'move' | 'pen' | 'eraser' | 'picker' | 'fill' | 'replace';
 export type Phase = 'empty' | 'ready' | 'result';
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+interface ColorPickRequest {
+  title: string;
+  /** Offer a "none" choice (resolves null). */
+  allowNone: boolean;
+  current: ColorId | null;
+  /** Color id, null for "none", undefined when cancelled. */
+  resolve: (id: ColorId | null | undefined) => void;
+}
 
 interface ConfirmRequest {
   title: string;
@@ -21,6 +33,12 @@ interface ConfirmRequest {
 
 export const state = reactive({
   phase: 'empty' as Phase,
+  /** What the current work is made from. */
+  kind: 'image' as Kind,
+  textSettings: defaultTextSettings(),
+  qrSettings: defaultQrSettings(),
+  /** Text / QR settings (JSON) the current pattern was made with. */
+  appliedMaker: null as string | null,
   source: null as SourceImage | null,
   crop: null as Rect | null,
   settings: normalizeSettings((loadLastSettings() as Partial<Settings>) ?? {}),
@@ -48,8 +66,9 @@ export const state = reactive({
   sourceFrame: null as Rect | null,
   works: [] as WorkSummary[],
   confirm: null as ConfirmRequest | null,
+  colorPick: null as ColorPickRequest | null,
   /** Open dialog / sheet. */
-  dialog: null as null | 'crop' | 'export' | 'works' | 'palette' | 'settings',
+  dialog: null as null | 'crop' | 'export' | 'works' | 'palette' | 'settings' | 'brand',
 });
 
 const generator = new Generator();
@@ -77,6 +96,25 @@ export function answer(ok: boolean): void {
   c?.resolve(ok);
 }
 
+/** Let the user pick a color of the current brand + tier. */
+export function pickColor(title: string, current: ColorId | null, allowNone = false): Promise<ColorId | null | undefined> {
+  return new Promise((resolve) => {
+    state.colorPick?.resolve(undefined);
+    state.colorPick = { title, current, allowNone, resolve };
+  });
+}
+
+export function answerColor(id: ColorId | null | undefined): void {
+  const c = state.colorPick;
+  state.colorPick = null;
+  c?.resolve(id);
+}
+
+/** Changes whenever the current work changes (to drop async results that belong to an older one). */
+export function workToken(): number {
+  return workSession;
+}
+
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 export function notify(msg: string): void {
   state.notice = msg;
@@ -93,6 +131,7 @@ export async function loadFile(file: Blob, name = '新图纸'): Promise<void> {
     if (state.edited && state.doc && !(await ask('换一张图片？', '当前图纸会保存在「我的作品」里，可以随时回来继续编辑。', '换图片'))) return;
     await flushSave();
     resetWork();
+    state.kind = 'image';
     state.source = markRaw(src);
     state.crop = null;
     state.phase = 'ready';
@@ -118,6 +157,7 @@ function resetWork(): void {
   state.doc = null;
   state.editor = null;
   state.appliedSettings = null;
+  state.appliedMaker = null;
   state.appliedCrop = null;
   state.edited = false;
   state.highlight = null;
@@ -131,34 +171,79 @@ function resetWork(): void {
 export async function startOver(): Promise<void> {
   await flushSave();
   resetWork();
+  state.kind = 'image';
   state.source = null;
   state.crop = null;
   state.phase = 'empty';
   void refreshWorks();
 }
 
+/** Start a new text or QR pattern (settings first, then 生成图纸). */
+export async function startMaker(kind: Exclude<Kind, 'image'>): Promise<void> {
+  state.error = '';
+  if (state.edited && state.doc && !(await ask(`新建${kind === 'qr' ? '二维码' : '文字'}图纸？`, '当前图纸会保存在「我的作品」里，可以随时回来继续编辑。', '新建'))) return;
+  await flushSave();
+  resetWork();
+  state.kind = kind;
+  state.source = null;
+  state.crop = null;
+  state.phase = 'ready';
+  // phones: the input fields live in the bottom sheet
+  if (window.matchMedia('(max-width: 767px)').matches) state.dialog = 'settings';
+}
+
 // --- generation -----------------------------------------------------------------------------
+
+/** Text / QR settings of the current kind. */
+export function makerSettings(): TextSettings | QrSettings | null {
+  return state.kind === 'text' ? normalizeText(state.textSettings) : state.kind === 'qr' ? normalizeQr(state.qrSettings) : null;
+}
 
 export function settingsChanged(): boolean {
   if (!state.appliedSettings) return true;
+  if (state.kind !== 'image') {
+    const a = state.appliedSettings;
+    return a.brand !== state.settings.brand || a.tier !== state.settings.tier || state.appliedMaker !== JSON.stringify(makerSettings());
+  }
   return JSON.stringify(state.appliedSettings) !== JSON.stringify(state.settings) || JSON.stringify(state.appliedCrop) !== JSON.stringify(state.crop);
 }
 
+/** Before replacing an edited pattern: ask, then back it up. False = do not regenerate. */
+async function confirmOverwrite(session: number): Promise<boolean> {
+  if (!state.edited || !state.doc) return true;
+  const ok = await ask('重新生成会覆盖手工修改', '当前修改会先另存一份到「我的作品」（名称后加「修改前」），然后再重新生成。', '备份并重新生成');
+  if (!ok || session !== workSession) return false;
+  try {
+    await saveBackup();
+  } catch {
+    state.error = '备份失败（可能是本机存储空间不足），已取消重新生成。请先导出图纸保存。';
+    return false;
+  }
+  return session === workSession;
+}
+
+/** Make the result the current pattern (new work, or the same work regenerated). */
+function adopt(result: PatternResult, settings: Settings, name: string, meta: Record<string, unknown>): void {
+  if (!state.workId) state.workId = newId();
+  const doc = docFromPattern(result, { id: state.workId, name: state.doc?.name || name, brand: settings.brand, tier: String(settings.tier), settings: meta });
+  if (state.doc) doc.createdAt = state.doc.createdAt;
+  // palette indices change with every generation: the old current color would point elsewhere
+  state.currentColor = null;
+  attachDoc(doc);
+  state.appliedSettings = settings;
+  state.edited = false;
+  state.phase = 'result';
+  state.viewMode = 'pattern';
+  state.highlight = null;
+  scheduleSave(0);
+}
+
 export async function generate(): Promise<void> {
+  if (state.kind !== 'image') return make();
   const src = state.source;
   if (!src || state.generating) return;
   const session = workSession;
-  if (state.edited && state.doc) {
-    const ok = await ask('重新生成会覆盖手工修改', '当前修改会先另存一份到「我的作品」（名称后加「修改前」），然后再重新生成。', '备份并重新生成');
-    if (!ok || session !== workSession) return;
-    try {
-      await saveBackup();
-    } catch {
-      state.error = '备份失败（可能是本机存储空间不足），已取消重新生成。请先导出图纸保存。';
-      return;
-    }
-    if (session !== workSession) return;
-  }
+  if (!(await confirmOverwrite(session))) return;
   state.error = '';
   state.generating = true;
   const settings = normalizeSettings(state.settings);
@@ -175,33 +260,34 @@ export async function generate(): Promise<void> {
           : '图片是全透明的，没有可以转换的内容。';
       return;
     }
-    const isNew = !state.workId;
-    if (isNew) state.workId = newId();
-    const name = state.doc?.name || src.name;
-    const doc = docFromPattern(result, {
-      id: state.workId,
-      name,
-      brand: settings.brand,
-      tier: String(settings.tier),
-      settings: { settings, crop, frame: frameOf(result, crop) },
-    });
-    if (state.doc) doc.createdAt = state.doc.createdAt;
-    // palette indices change with every generation: the old current color would point elsewhere
-    state.currentColor = null;
-    attachDoc(doc);
-    state.appliedSettings = settings;
+    adopt(result, settings, src.name, { kind: 'image', settings, crop, frame: frameOf(result, crop) });
     state.appliedCrop = crop;
     state.sourceFrame = frameOf(result, crop);
-    state.edited = false;
-    state.phase = 'result';
-    state.viewMode = 'pattern';
-    state.highlight = null;
-    scheduleSave(0);
   } catch (e) {
     if (!(e instanceof CancelledError)) state.error = `生成失败：${e instanceof Error ? e.message : String(e)}`;
   } finally {
     if (session === workSession) state.generating = false;
   }
+}
+
+/** Text / QR: made on the main thread (a few milliseconds). */
+async function make(): Promise<void> {
+  const kind = state.kind;
+  const ms = makerSettings();
+  if (kind === 'image' || !ms || state.generating) return;
+  const session = workSession;
+  if (!(await confirmOverwrite(session))) return;
+  const settings = normalizeSettings(state.settings);
+  let result: PatternResult;
+  try {
+    result = makePattern(kind, ms, settings.brand, settings.tier);
+  } catch (e) {
+    state.error = e instanceof MakerError ? e.message : `生成失败：${e instanceof Error ? e.message : String(e)}`;
+    return;
+  }
+  state.error = '';
+  adopt(result, settings, makerName(kind, ms), kind === 'qr' ? { kind, settings, qr: ms } : { kind, settings, text: ms });
+  state.appliedMaker = JSON.stringify(ms);
 }
 
 export function cancelGenerate(): void {
@@ -225,9 +311,25 @@ function attachDoc(doc: PatternDoc): void {
   const editor = new PatternEditor(doc);
   state.doc = markRaw(doc);
   state.editor = markRaw(editor);
+  let brand = `${doc.brand}|${doc.tier}`;
   unsubscribe = editor.subscribe(() => {
     state.version++;
     state.edited = true;
+    // brand conversion (or undoing it): regenerating should use the brand the pattern now has
+    if (`${doc.brand}|${doc.tier}` !== brand) {
+      brand = `${doc.brand}|${doc.tier}`;
+      const tier = doc.tier === 'all' ? 'all' : Number(doc.tier);
+      state.settings = normalizeSettings({ ...state.settings, brand: doc.brand, tier });
+      if (state.appliedSettings) state.appliedSettings = normalizeSettings({ ...state.appliedSettings, brand: doc.brand, tier });
+      // keep the saved generation settings in step, so reopening the work keeps the brand
+      const meta = doc.settings as { settings?: Partial<Settings> };
+      if (meta.settings) meta.settings = { ...meta.settings, brand: doc.brand, tier };
+      // the pen color / highlight may be a bead of the previous brand now
+      state.highlight = null;
+      const inBrand = new Set(getPalette(doc.brand, tier).map((c) => `${c.key}${c.hex.toUpperCase()}`));
+      const cur = state.currentColor === null ? null : doc.palette[state.currentColor];
+      if (!cur || !inBrand.has(`${cur.key}${cur.hex.toUpperCase()}`)) state.currentColor = colorUsage(doc)[0]?.index ?? null;
+    }
     scheduleSave();
   });
   state.version++;
@@ -253,6 +355,18 @@ export function undo(): void {
 
 export function redo(): void {
   state.editor?.redo();
+}
+
+/** Switch the pattern to another brand / tier (one undo step). */
+export function convertBrand(plan: ConversionPlan): boolean {
+  if (!state.editor) return false;
+  // state.editor is markRaw'd: it is the PatternEditor instance, only its reactive type is unwrapped
+  const editor = state.editor as unknown as PatternEditor;
+  const cur = state.currentColor === null ? undefined : plan.rows.find((r) => r.index === state.currentColor);
+  const changed = applyBrandConversion(editor, plan);
+  // keep painting with the same bead, now under its new code
+  if (changed && cur) state.currentColor = editor.ensureColor(cur.to);
+  return changed;
 }
 
 export function rename(name: string): void {
@@ -376,17 +490,23 @@ export async function openWork(id: string): Promise<void> {
       throw new Error('作品数据已损坏或版本不兼容');
     }
     resetWork();
-    const meta = doc.settings as { settings?: Partial<Settings>; crop?: Rect | null; frame?: Rect | null };
+    const meta = doc.settings as { kind?: Kind; settings?: Partial<Settings>; crop?: Rect | null; frame?: Rect | null; text?: Partial<TextSettings>; qr?: Partial<QrSettings> };
     const session = workSession;
     const source = rec.source ? markRaw(await decodeImage(rec.source, doc.name)) : null;
     if (session !== workSession) return;
     if (source && rec.source) sourceBlobs.set(source, rec.source);
+    state.kind = meta.kind === 'text' || meta.kind === 'qr' ? meta.kind : 'image';
+    if (state.kind === 'text') state.textSettings = normalizeText(meta.text);
+    if (state.kind === 'qr') state.qrSettings = normalizeQr(meta.qr);
+    state.appliedMaker = state.kind === 'image' ? null : JSON.stringify(makerSettings());
     state.source = source;
-    state.settings = normalizeSettings(meta.settings ?? {});
+    // the document's own brand / tier win: a brand conversion changes them after generation
+    const docBrand: Partial<Settings> = { brand: doc.brand, tier: doc.tier === 'all' ? 'all' : Number(doc.tier) };
+    state.settings = normalizeSettings({ ...meta.settings, ...docBrand });
     state.crop = meta.crop ?? null;
     state.workId = doc.id;
     attachDoc(doc);
-    state.appliedSettings = normalizeSettings(meta.settings ?? {});
+    state.appliedSettings = normalizeSettings({ ...meta.settings, ...docBrand });
     state.appliedCrop = meta.crop ?? null;
     state.sourceFrame = meta.frame ?? null;
     state.edited = false;
@@ -406,6 +526,7 @@ export async function removeWork(id: string, name: string): Promise<void> {
       await flushSave();
       await dbDelete(id);
       resetWork();
+      state.kind = 'image';
       state.source = null;
       state.crop = null;
       state.phase = 'empty';

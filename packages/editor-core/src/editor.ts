@@ -1,11 +1,19 @@
 import { EMPTY_CELL, type PaletteEntry, type PatternDoc } from './doc';
 
+/** Brand and color tier of a document (changed by brand conversion). */
+export interface DocBrand {
+  brand: string;
+  tier: string;
+}
+
 /** One undoable step: the cells it touched with their values before and after. */
 interface Change {
   label: string;
   idx: Int32Array;
   before: Uint16Array;
   after: Uint16Array;
+  /** Set when the step also switched the document's brand / tier. */
+  brand?: { before: DocBrand; after: DocBrand };
 }
 
 /** Cells that changed (indices into doc.cells), or 'all' after whole-grid operations. */
@@ -190,6 +198,23 @@ export class PatternEditor {
     return this.commit('replace', Int32Array.from(hits), () => to);
   }
 
+  /**
+   * Recolor every bead through `map` (old palette index -> new index; indices not in the map
+   * stay), optionally switching the document's brand / tier in the same undo step.
+   */
+  remapColors(map: ReadonlyMap<number, number>, brand?: DocBrand, label = 'remap'): boolean {
+    map.forEach((to) => this.checkValue(to));
+    const { cells } = this.doc;
+    const hits: number[] = [];
+    for (let i = 0; i < cells.length; i++) {
+      const to = map.get(cells[i]);
+      if (to !== undefined && to !== cells[i]) hits.push(i);
+    }
+    const prev: DocBrand = { brand: this.doc.brand, tier: this.doc.tier };
+    const switched = brand && (brand.brand !== prev.brand || brand.tier !== prev.tier) ? { before: prev, after: { ...brand } } : undefined;
+    return this.commit(label, Int32Array.from(hits), (i) => map.get(cells[i])!, switched);
+  }
+
   /** Flip the whole pattern left-right. */
   mirrorHorizontal(): boolean {
     const { cols, rows, cells } = this.doc;
@@ -209,7 +234,7 @@ export class PatternEditor {
     if (this.stroke) this.endStroke();
     const c = this.undoStack.pop();
     if (!c) return false;
-    this.write(c.idx, c.before);
+    this.write(c.idx, c.before, c.brand?.before);
     this.redoStack.push(c);
     return true;
   }
@@ -217,7 +242,7 @@ export class PatternEditor {
   redo(): boolean {
     const c = this.redoStack.pop();
     if (!c) return false;
-    this.write(c.idx, c.after);
+    this.write(c.idx, c.after, c.brand?.after);
     this.undoStack.push(c);
     return true;
   }
@@ -237,9 +262,9 @@ export class PatternEditor {
     }
   }
 
-  private commit(label: string, idx: Int32Array, next: (i: number) => number): boolean {
+  private commit(label: string, idx: Int32Array, next: (i: number) => number, brand?: Change['brand']): boolean {
     if (this.stroke) this.endStroke();
-    if (!idx.length) return false;
+    if (!idx.length && !brand) return false;
     const before = new Uint16Array(idx.length);
     const after = new Uint16Array(idx.length);
     for (let k = 0; k < idx.length; k++) {
@@ -247,15 +272,22 @@ export class PatternEditor {
       after[k] = next(idx[k]);
     }
     for (let k = 0; k < idx.length; k++) this.doc.cells[idx[k]] = after[k];
-    this.push({ label, idx, before, after });
-    this.emit(idx.length > this.doc.cells.length / 4 ? 'all' : idx);
+    if (brand) this.setBrand(brand.after);
+    this.push({ label, idx, before, after, brand });
+    this.emit(brand || idx.length > this.doc.cells.length / 4 ? 'all' : idx);
     return true;
   }
 
-  private write(idx: Int32Array, values: Uint16Array): void {
+  private write(idx: Int32Array, values: Uint16Array, brand?: DocBrand): void {
     for (let k = 0; k < idx.length; k++) this.doc.cells[idx[k]] = values[k];
+    if (brand) this.setBrand(brand);
     this.doc.updatedAt = this.now();
-    this.emit(idx.length > this.doc.cells.length / 4 ? 'all' : idx);
+    this.emit(brand || idx.length > this.doc.cells.length / 4 ? 'all' : idx);
+  }
+
+  private setBrand(b: DocBrand): void {
+    this.doc.brand = b.brand;
+    this.doc.tier = b.tier;
   }
 
   private push(c: Change): void {

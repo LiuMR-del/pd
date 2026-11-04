@@ -5,6 +5,8 @@ import { thumbnail } from '../lib/image';
 import { SIZE_LABELS, STYLE_LABELS, tierLabel, withSize, type SizeChoice, type Style } from '../lib/settings';
 import { cancelGenerate, generate, settingsChanged, state } from '../store';
 import NumberField from './NumberField.vue';
+import QrFields from './QrFields.vue';
+import TextFields from './TextFields.vue';
 
 const emit = defineEmits<{ export: []; pick: [File | undefined] }>();
 
@@ -15,6 +17,8 @@ const tiers = listTiers();
 const s = computed(() => state.settings);
 const thumb = computed(() => (state.source ? thumbnail(state.source.canvas, state.source.width, state.source.height, 160) : ''));
 const hasResult = computed(() => state.phase === 'result' && !!state.doc);
+const isImage = computed(() => state.kind === 'image');
+const canGenerate = computed(() => (isImage.value ? !!state.source : true));
 const changed = computed(() => settingsChanged());
 const primaryLabel = computed(() => {
   if (state.generating) return '取消生成';
@@ -49,42 +53,46 @@ function primary(): void {
 
 <template>
   <div class="settings">
-    <section class="field">
-      <div class="label-row">
-        <span class="label">图片</span>
-        <span v-if="state.crop" class="hint">已裁剪</span>
-      </div>
-      <div class="image-row">
-        <img v-if="thumb" class="thumb" :src="thumb" alt="已上传的图片" />
-        <div class="image-actions">
-          <label class="btn secondary file">
-            更换
-            <input type="file" accept="image/*" @change="onFile" />
-          </label>
-          <button class="btn secondary" :disabled="!state.source" @click="state.dialog = 'crop'">裁剪</button>
+    <TextFields v-if="state.kind === 'text'" />
+    <QrFields v-else-if="state.kind === 'qr'" />
+    <template v-else>
+      <section class="field">
+        <div class="label-row">
+          <span class="label">图片</span>
+          <span v-if="state.crop" class="hint">已裁剪</span>
         </div>
-      </div>
-    </section>
+        <div class="image-row">
+          <img v-if="thumb" class="thumb" :src="thumb" alt="已上传的图片" />
+          <div class="image-actions">
+            <label class="btn secondary file">
+              更换
+              <input type="file" accept="image/*" @change="onFile" />
+            </label>
+            <button class="btn secondary" :disabled="!state.source" @click="state.dialog = 'crop'">裁剪</button>
+          </div>
+        </div>
+      </section>
 
-    <section class="field">
-      <span class="label" id="lbl-style">风格</span>
-      <div class="seg" role="radiogroup" aria-labelledby="lbl-style">
-        <button v-for="st in styles" :key="st" role="radio" :aria-checked="s.style === st" @click="state.settings = { ...s, style: st }">
-          {{ STYLE_LABELS[st] }}
-        </button>
-      </div>
-      <p class="help">卡通：轮廓清楚；照片：过渡更柔和；像素图：按原图像素对齐。</p>
-    </section>
+      <section class="field">
+        <span class="label" id="lbl-style">风格</span>
+        <div class="seg" role="radiogroup" aria-labelledby="lbl-style">
+          <button v-for="st in styles" :key="st" role="radio" :aria-checked="s.style === st" @click="state.settings = { ...s, style: st }">
+            {{ STYLE_LABELS[st] }}
+          </button>
+        </div>
+        <p class="help">卡通：轮廓清楚；照片：过渡更柔和；像素图：按原图像素对齐。</p>
+      </section>
 
-    <section class="field">
-      <span class="label" id="lbl-size">图纸尺寸</span>
-      <div class="seg" role="radiogroup" aria-labelledby="lbl-size">
-        <button v-for="sz in sizes" :key="sz" role="radio" :aria-checked="s.size === sz" @click="setSize(sz)">{{ SIZE_LABELS[sz] }}</button>
-        <button role="radio" :aria-checked="s.size === 'custom'" @click="setSize('custom')">自定义</button>
-      </div>
-      <NumberField label="长边格数" :model-value="s.longSide" :min="10" :max="200" :step="2" unit="格" @update:model-value="setLongSide" />
-      <NumberField label="最大颜色数" :model-value="s.maxColors" :min="2" :max="60" unit="色" @update:model-value="setMaxColors" />
-    </section>
+      <section class="field">
+        <span class="label" id="lbl-size">图纸尺寸</span>
+        <div class="seg" role="radiogroup" aria-labelledby="lbl-size">
+          <button v-for="sz in sizes" :key="sz" role="radio" :aria-checked="s.size === sz" @click="setSize(sz)">{{ SIZE_LABELS[sz] }}</button>
+          <button role="radio" :aria-checked="s.size === 'custom'" @click="setSize('custom')">自定义</button>
+        </div>
+        <NumberField label="长边格数" :model-value="s.longSide" :min="10" :max="200" :step="2" unit="格" @update:model-value="setLongSide" />
+        <NumberField label="最大颜色数" :model-value="s.maxColors" :min="2" :max="60" unit="色" @update:model-value="setMaxColors" />
+      </section>
+    </template>
 
     <section class="field">
       <span class="label">色卡</span>
@@ -99,14 +107,14 @@ function primary(): void {
       <p v-if="s.brand !== 'MARD'" class="help warn">非 MARD 品牌暂按 MARD 色值换算色号，实物颜色可能有偏差。</p>
     </section>
 
-    <section class="field">
+    <section v-if="isImage" class="field">
       <label class="check">
         <input type="checkbox" :checked="s.removeBackground" @change="state.settings = { ...s, removeBackground: ($event.target as HTMLInputElement).checked }" />
         <span>去掉背景（主体自动撑满图纸）</span>
       </label>
     </section>
 
-    <details class="field advanced">
+    <details v-if="isImage" class="field advanced">
       <summary>高级设置</summary>
       <label class="check">
         <input type="checkbox" :checked="s.strokeProtect" @change="state.settings = { ...s, strokeProtect: ($event.target as HTMLInputElement).checked }" />
@@ -127,7 +135,7 @@ function primary(): void {
       <p v-if="hasResult && changed && !state.generating" class="help warn">参数已修改，当前图纸仍是上次的结果。</p>
       <button v-if="hasResult && changed && !state.generating" class="btn secondary" @click="emit('export')">导出上次结果</button>
       <button v-else-if="hasResult && !state.generating" class="btn secondary" @click="generate">重新生成</button>
-      <button class="btn primary" :disabled="!state.source && !hasResult" @click="primary">{{ primaryLabel }}</button>
+      <button class="btn primary" :disabled="!canGenerate && !hasResult" @click="primary">{{ primaryLabel }}</button>
     </div>
   </div>
 </template>
@@ -215,9 +223,11 @@ function primary(): void {
   flex-direction: column;
   gap: 8px;
   position: sticky;
-  bottom: 0;
+  /* sticky stops at the scroll container's padding (16px): cover that strip too */
+  bottom: -16px;
   background: var(--panel);
   padding-top: 8px;
+  padding-bottom: 16px;
 }
 .small {
   align-self: flex-start;

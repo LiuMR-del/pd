@@ -11,6 +11,7 @@ packages/pattern-core/   # 算法（纯 TS、零运行时依赖），可在小�
 packages/palettes/       # 色卡数据（JSON）+ 校验脚本
 packages/editor-core/    # 图纸文档、编辑命令、撤销重做、用量统计、草稿序列化
 packages/render/         # 图纸渲染与导出排版（标准 Canvas 2D 子集，网页 / 小程序共用）
+packages/makers/         # 文字转图纸、二维码转图纸（平台无关，网页 / 小程序共用）
 apps/web/                # PC 网页（Vue 3 + Vite），算法在 Web Worker 里跑，作品存在浏览器 IndexedDB
 tools/bench/             # 评测：测试集清单、合成图、指标脚本、本地对比页
 docs/                    # 方案、任务清单、阶段报告
@@ -45,7 +46,12 @@ Mac 和 Windows 两台电脑都会改代码，换电脑时的步骤和 Windows �
 
 - 所有源自 perler-beads 的代码与数据**只放在** `packages/pattern-core` 和 `packages/palettes` 两个包内。
 - 每个源自 perler-beads 的文件，在文件头（JSON / CSV 等无法加注释的数据文件则在同目录的 `NOTICE.md`）注明：来源仓库、commit、原文件路径、AGPL-3.0、修改说明。
-- 仓库其余代码均为本项目自研。
+- 仓库其余代码均为本项目自研，以下第三方代码除外。
+
+### 其他第三方代码
+
+- `packages/makers/src/vendor/qrcodegen.ts`：Project Nayuki 的 [QR Code generator library](https://github.com/nayuki/QR-Code-generator)（TypeScript 版，commit `bcfe1b01`），**MIT 许可**，原版权和许可声明保留在文件头；只给命名空间加了 `export`。
+- [jsQR](https://github.com/cozmo/jsQR)（**Apache-2.0**）：网页端「从二维码图片识别」按需加载；`packages/makers` 的单测用它验证生成的二维码能扫出原文。
 - 暂不接受外部 PR；如需接受，将先引入贡献者授权协议（CLA）。
 
 ### 测试图
