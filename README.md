@@ -2,7 +2,7 @@
 
 把图片转换为拼豆（Perler / Hama / MARD 等）图纸的工具：PC 网页（同时适配手机浏览器）+ 微信小程序（uni-app）。
 
-当前处于**阶段 1b：微信小程序**（阶段 0 算法验证、阶段 1a PC 网页已完成，见 `docs/阶段0-算法报告.md`、`docs/任务清单.md`）。
+当前处于**阶段 2：账号与云端**（后端 + 网页登录同步 + 最小后台，见 `docs/阶段2-计划.md`）；阶段 0、1a、3（本地部分）已完成，1b 微信小程序暂缓。进度见 `docs/任务清单.md`，换人 / 换 AI 接手先看 `docs/交接提示词.md`。
 
 ## 目录
 
@@ -12,7 +12,10 @@ packages/palettes/       # 色卡数据（JSON）+ 校验脚本
 packages/editor-core/    # 图纸文档、编辑命令、撤销重做、用量统计、草稿序列化
 packages/render/         # 图纸渲染与导出排版（标准 Canvas 2D 子集，网页 / 小程序共用）
 packages/makers/         # 文字转图纸、二维码转图纸（平台无关，网页 / 小程序共用）
-apps/web/                # PC 网页（Vue 3 + Vite），算法在 Web Worker 里跑，作品存在浏览器 IndexedDB
+apps/web/                # PC 网页（Vue 3 + Vite），算法在 Web Worker 里跑，作品存在浏览器 IndexedDB，登录后同步到云端
+apps/server/             # 后端（NestJS + Prisma + MySQL 8）：账号、作品云端保存与历史版本、图片、色卡下发、后台接口
+apps/admin/              # 最小后台（Vue 3 + Element Plus）：色卡编辑发布、用户列表
+docker-compose.yml       # 本机开发用 MySQL（127.0.0.1:3307）
 tools/bench/             # 评测：测试集清单、合成图、指标脚本、本地对比页
 docs/                    # 方案、任务清单、阶段报告
 ```
@@ -29,6 +32,21 @@ pnpm dev:web        # 本地运行网页，浏览器打开终端里显示的地�
 pnpm build:web      # 打包网页到 apps/web/dist/（静态文件）
 pnpm bench          # 跑评测，输出到 tools/bench/out/（需先把测试图放进 tools/bench/images/）
 ```
+
+### 后端与后台（阶段 2，需要 Docker）
+
+```bash
+pnpm db:up                                        # 启动 MySQL（首次自动建 pd / pd_shadow / pd_test 三个库）
+cp apps/server/.env.example apps/server/.env      # 首次；按需修改 JWT_SECRET 等
+pnpm --filter @pd/server db:deploy                # 首次或拉到新迁移后：建表
+pnpm dev:server                                   # 后端 http://127.0.0.1:3100/api/health
+pnpm dev:web                                      # 网页通过 /api 代理连后端；后端没开时网页照常可用（只是不能登录）
+pnpm --filter @pd/server admin:create <用户名>    # 创建后台管理员（交互输入密码）
+pnpm dev:admin                                    # 后台 http://localhost:5174
+pnpm db:down                                      # 停止 MySQL（数据保留；docker compose down -v 才会删数据）
+```
+
+`pnpm -r test` 会跑后端的接口测试，需要 MySQL 已启动（测试写入 `pd_test` 库，不清库）。改表结构用 `pnpm --filter @pd/server db:migrate`。
 
 Mac 和 Windows 两台电脑都会改代码，换电脑时的步骤和 Windows 开工脚本见 `docs/双机开发.md`。
 
