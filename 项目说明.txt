@@ -4,7 +4,7 @@
 建立时间：2026-10-29
 完成时间：进行中
 最后修改：2026-11-04
-状态：暂停
+状态：进行中（阶段 1b 微信小程序）
 对应需求卡片：无
-MVP 范围：图片 → MARD 色号图纸 → 编辑 → 导出 PNG（阶段 1a PC 网页）
-备注：2026-11-03 从 Mac 迁到 Windows；Node / git / pnpm 装在 C:\Data\Project\环境（已加入用户 PATH）。常用命令：pnpm install、pnpm palettes:sync、pnpm -r test、pnpm dev:web、pnpm dev:web:lan（手机同一 Wi-Fi 访问）、pnpm bench。2026-11-04 暂停：阶段 1a 网页基本可用，手机刷新后作品丢失待修（见任务清单）；本机 PATH 等系统设置已恢复，重新开工时要把 C:\Data\Project\环境\node 和 git\cmd 加回 PATH（或在命令前临时 set PATH）。详细进度见 docs\任务清单.md。
+MVP 范围：图片 → MARD 色号图纸 → 编辑 → 导出 PNG（阶段 1a PC 网页，已验收）
+备注：2026-11-03 从 Mac 迁到 Windows；Node / git / pnpm 装在 C:\Data\Project\环境（已加入用户 PATH）。常用命令：pnpm install、pnpm palettes:sync、pnpm -r test、pnpm dev:web、pnpm dev:web:lan（手机同一 Wi-Fi 访问）、pnpm bench。2026-11-04 暂停：阶段 1a 网页基本可用，手机刷新后作品丢失待修（见任务清单）；本机 PATH 等系统设置已恢复，重新开工时要把 C:\Data\Project\环境\node 和 git\cmd 加回 PATH（或在命令前临时 set PATH）。2026-11-04 恢复开发：Mac 和 Windows 两台都会改，通过 GitHub 同步；Windows 开工先运行 tools\env\win.cmd（只临时加 PATH），步骤见 docs\双机开发.md。详细进度见 docs\任务清单.md。

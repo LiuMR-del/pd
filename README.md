@@ -2,7 +2,7 @@
 
 把图片转换为拼豆（Perler / Hama / MARD 等）图纸的工具：PC 网页（同时适配手机浏览器）+ 微信小程序（uni-app）。
 
-当前处于**阶段 1a：PC 网页 MVP**（阶段 0 算法验证已完成，见 `docs/阶段0-算法报告.md`）。
+当前处于**阶段 1b：微信小程序**（阶段 0 算法验证、阶段 1a PC 网页已完成，见 `docs/阶段0-算法报告.md`、`docs/任务清单.md`）。
 
 ## 目录
 
@@ -28,6 +28,8 @@ pnpm dev:web        # 本地运行网页，浏览器打开终端里显示的地�
 pnpm build:web      # 打包网页到 apps/web/dist/（静态文件）
 pnpm bench          # 跑评测，输出到 tools/bench/out/（需先把测试图放进 tools/bench/images/）
 ```
+
+Mac 和 Windows 两台电脑都会改代码，换电脑时的步骤和 Windows 开工脚本见 `docs/双机开发.md`。
 
 ## 来源与许可证
 

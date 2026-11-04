@@ -1,0 +1,11 @@
+# Mac 和 Windows 两台电脑都会改代码：仓库里统一存 LF，避免整文件换行符变化
+* text=auto eol=lf
+
+# Windows 脚本保持 CRLF
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# 原样保存的第三方 / 数据文件（本来就是 CRLF，不转换）
+packages/palettes/vendor/** -text
+tools/bench/images/manifest.csv -text
