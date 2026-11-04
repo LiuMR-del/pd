@@ -18,6 +18,8 @@
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
     "dev:server": "pnpm --filter @pd/server dev",
-    "build:server": "pnpm --filter @pd/server build"
+    "build:server": "pnpm --filter @pd/server build",
+    "dev:admin": "pnpm --filter @pd/admin dev",
+    "build:admin": "pnpm --filter @pd/admin build"
   }
 }

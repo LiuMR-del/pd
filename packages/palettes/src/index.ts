@@ -6,6 +6,19 @@ export * from './schema';
 export const paletteData = raw as unknown as PaletteData;
 export const BRANDS: readonly string[] = paletteData.brands;
 
+/**
+ * Replace the palette data at runtime (e.g. with the server's admin-edited copy). The exported
+ * objects are updated in place so existing imports see the new data; call it before the UI uses
+ * any palette, not in the middle of a session.
+ */
+export function replacePaletteData(next: PaletteData): void {
+  (paletteData.brands as string[]).splice(0, paletteData.brands.length, ...next.brands);
+  paletteData.colors = next.colors;
+  paletteData.tiers = next.tiers;
+  paletteData.knownIssues = next.knownIssues;
+  paletteData._source = next._source;
+}
+
 export function listTiers(): PaletteTier[] {
   return paletteData.tiers.slice().sort((a, b) => a.size - b.size);
 }
