@@ -14,6 +14,10 @@
     "bench": "pnpm --filter @pd/bench bench",
     "dev:web": "pnpm --filter @pd/web dev",
     "dev:web:lan": "pnpm --filter @pd/web dev --host",
-    "build:web": "pnpm --filter @pd/web build"
+    "build:web": "pnpm --filter @pd/web build",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
+    "dev:server": "pnpm --filter @pd/server dev",
+    "build:server": "pnpm --filter @pd/server build"
   }
 }

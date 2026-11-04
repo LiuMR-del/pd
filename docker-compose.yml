@@ -1,0 +1,23 @@
+# Local development database for apps/server (stage 2). Not for production.
+# Start: docker compose up -d   ·   Stop: docker compose down   ·   Wipe data: docker compose down -v
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: pd_root_dev
+      MYSQL_DATABASE: pd
+      MYSQL_USER: pd
+      MYSQL_PASSWORD: pd_dev
+    command: ['--character-set-server=utf8mb4', '--collation-server=utf8mb4_0900_ai_ci']
+    ports:
+      - '127.0.0.1:3307:3306'
+    volumes:
+      - pd-mysql:/var/lib/mysql
+      - ./apps/server/prisma/docker-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-upd', '-ppd_dev']
+      interval: 3s
+      timeout: 3s
+      retries: 40
+volumes:
+  pd-mysql:

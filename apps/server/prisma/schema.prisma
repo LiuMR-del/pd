@@ -1,0 +1,103 @@
+// Stage 2 data model. MySQL 8 via the MariaDB driver adapter (Prisma 7, no query engine binary).
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model User {
+  id           String   @id @default(cuid()) @db.VarChar(32)
+  /// Web login (username + password). Null for WeChat-only accounts.
+  username     String?  @unique @db.VarChar(32)
+  passwordHash String?  @db.VarChar(255)
+  /// WeChat mini-program login.
+  wxOpenId     String?  @unique @db.VarChar(64)
+  wxUnionId    String?  @db.VarChar(64)
+  nickname     String   @default("") @db.VarChar(32)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions Session[]
+  works    Work[]
+}
+
+/// One refresh token (stored as SHA-256). Rotated on every refresh; revoked on logout / password change.
+model Session {
+  id        String    @id @default(cuid()) @db.VarChar(32)
+  userId    String    @db.VarChar(32)
+  tokenHash String    @unique @db.Char(64)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  userAgent String    @default("") @db.VarChar(255)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Work {
+  /// Client-generated id (the draft id), unique across users; ownership is checked on every write.
+  id              String    @id @db.VarChar(64)
+  userId          String    @db.VarChar(32)
+  name            String    @db.VarChar(100)
+  /// Incremented on every save; clients send the revision they edited (optimistic concurrency).
+  revision        Int       @default(1)
+  /// PatternDraftV1 (see @pd/editor-core).
+  draft           Json
+  /// Extra client state (source kind, crop, maker options…), opaque to the server.
+  meta            Json?
+  thumbKey        String?   @db.VarChar(100)
+  sourceKey       String?   @db.VarChar(100)
+  /// Client-side updatedAt of the draft (ms).
+  clientUpdatedAt BigInt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  /// Soft delete so other devices learn about it during sync.
+  deletedAt       DateTime?
+  /// When the latest history version was taken (for the 30-minute rule).
+  lastVersionAt   DateTime?
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions WorkVersion[]
+
+  @@index([userId, updatedAt])
+}
+
+model WorkVersion {
+  id        Int      @id @default(autoincrement())
+  workId    String   @db.VarChar(64)
+  revision  Int
+  name      String   @db.VarChar(100)
+  draft     Json
+  /// 'auto' (30-minute rule) | 'manual' | 'backup' (before regenerate) | 'restore' (before a restore)
+  reason    String   @db.VarChar(16)
+  createdAt DateTime @default(now())
+
+  work Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@index([workId, createdAt])
+}
+
+/// Every admin edit of the palette data stores a full new copy; the latest row is served.
+model PaletteRevision {
+  id        Int      @id @default(autoincrement())
+  data      Json
+  note      String   @default("") @db.VarChar(200)
+  adminId   String?  @db.VarChar(32)
+  createdAt DateTime @default(now())
+}
+
+model Admin {
+  id           String   @id @default(cuid()) @db.VarChar(32)
+  username     String   @unique @db.VarChar(32)
+  passwordHash String   @db.VarChar(255)
+  /// 'owner' | 'staff'
+  role         String   @default("staff") @db.VarChar(16)
+  createdAt    DateTime @default(now())
+}
