@@ -7,6 +7,7 @@ import { WechatClient } from './wechat';
 
 export const ACCESS_TTL_SEC = 2 * 60 * 60;
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const REFRESH_GRACE_MS = 30 * 1000;
 
 export interface TokenPair {
   accessToken: string;
@@ -39,6 +40,9 @@ export function publicUser(u: UserRow): PublicUser {
 
 @Injectable()
 export class AuthService {
+  /** Window in which replaying a just-rotated refresh token is treated as a race, not theft. */
+  graceMs = REFRESH_GRACE_MS;
+
   constructor(
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(PrismaService) private readonly db: PrismaService,
@@ -85,6 +89,8 @@ export class AuthService {
     const s = await this.db.session.findUnique({ where: { tokenHash: sha256(refreshToken) } });
     if (!s) throw unauthorized('登录已过期，请重新登录', 'refresh_invalid');
     if (s.revokedAt) {
+      // two tabs refreshing at the same moment: the loser only gets a 401, nobody is signed out
+      if (Date.now() - s.revokedAt.getTime() < this.graceMs) throw unauthorized('登录已更新，请重试', 'refresh_raced');
       await this.revokeAll(s.userId);
       throw unauthorized('登录已失效，请重新登录', 'refresh_reused');
     }

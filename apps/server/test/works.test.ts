@@ -95,7 +95,9 @@ describe('works', () => {
     const id = newId();
     const before = new Date(Date.now() - 1000).toISOString();
     await s.call('PUT', `/works/${id}`, { token: u.token, body: { baseRevision: null, draft: draft(id) } });
-    expect((await s.call('DELETE', `/works/${id}`, { token: u.token })).status).toBe(204);
+    const stale = await s.call('DELETE', `/works/${id}?baseRevision=9`, { token: u.token });
+    expect(stale.body.error.code).toBe('revision_conflict');
+    expect((await s.call('DELETE', `/works/${id}?baseRevision=1`, { token: u.token })).status).toBe(204);
     expect((await s.call('GET', `/works/${id}`, { token: u.token })).status).toBe(404);
     expect((await s.call('GET', '/works', { token: u.token })).body).toEqual([]);
     const changes = await s.call('GET', `/works?since=${encodeURIComponent(before)}`, { token: u.token });

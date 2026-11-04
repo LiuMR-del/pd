@@ -64,7 +64,7 @@ export class AdminController {
   @UseGuards(AdminGuard)
   async publish(@AdminId() adminId: string, @Body() body: unknown) {
     const b = parse(paletteBody, body);
-    const v = validatePalette(b.data);
+    const v = validatePalette(b.data, (await this.palettes.current()).data);
     if (!v.ok) throw badRequest(`色卡数据有误：${v.errors.join('；')}`, 'invalid_palette');
     return this.palettes.publish(v.data, b.note, adminId);
   }

@@ -51,5 +51,7 @@ export class MeController {
     await this.auth.checkPassword(userId, parse(deleteBody, body ?? {}).password);
     await this.db.user.delete({ where: { id: userId } });
     await this.files.removeUser(userId);
+    // an upload that raced the deletion may have recreated the folder
+    setTimeout(() => void this.files.removeUser(userId), 5000).unref();
   }
 }

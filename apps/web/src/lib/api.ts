@@ -120,7 +120,13 @@ let refreshing: Promise<boolean> | null = null;
 /** Swaps the refresh token for a new pair; false when the session is over. */
 function refresh(): Promise<boolean> {
   if (!refreshing) {
-    refreshing = (async () => {
+    const run = async (): Promise<boolean> => {
+      // another tab may have refreshed while this one waited for the lock
+      const stored = readTokens();
+      if (stored && tokens && stored.refreshToken !== tokens.refreshToken) {
+        tokens = stored;
+        return true;
+      }
       const t = tokens;
       if (!t) return false;
       const res = await send('POST', '/auth/refresh', { body: { refreshToken: t.refreshToken } }, null);
@@ -134,10 +140,18 @@ function refresh(): Promise<boolean> {
         tokens = now;
         return true;
       }
+      const err = await errorOf(res);
+      // raced with another tab (no lock support): its new tokens arrive through localStorage
+      if (err.code === 'refresh_raced') return false;
       if (res.status === 401) setTokens(null);
-      else throw await errorOf(res);
+      else throw err;
       return false;
-    })().finally(() => (refreshing = null));
+    };
+    // one refresh at a time across tabs, where the browser supports it
+    const locked: Promise<boolean> = navigator.locks ? navigator.locks.request('pd-web-refresh', run).then((v) => v) : run();
+    const p = locked.finally(() => (refreshing = null));
+    refreshing = p;
+    return p;
   }
   return refreshing;
 }

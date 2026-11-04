@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Inject, Injectable } from '@nestjs/common';
 import { CONFIG, type AppConfig } from '../config';
@@ -61,6 +61,11 @@ export class FileStore {
     } catch {
       return null;
     }
+  }
+
+  async exists(userId: string, key: string): Promise<boolean> {
+    if (!FileStore.isKey(key)) return false;
+    return stat(join(this.dir(userId), key)).then((s) => s.isFile(), () => false);
   }
 
   async remove(userId: string, key: string | null | undefined): Promise<void> {

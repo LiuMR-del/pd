@@ -3,7 +3,10 @@ import { z } from 'zod';
 
 const schema = z.object({
   DATABASE_URL: z.string().startsWith('mysql://', 'DATABASE_URL 必须是 mysql:// 连接串'),
-  JWT_SECRET: z.string().min(32, 'JWT_SECRET 至少 32 个字符'),
+  JWT_SECRET: z
+    .string()
+    .min(32, 'JWT_SECRET 至少 32 个字符')
+    .refine((s) => !/change-me/i.test(s) && new Set(s).size >= 10, 'JWT_SECRET 不能用示例值，请换成随机字符串'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3100),
   CORS_ORIGINS: z.string().default(''),
   STORAGE_DIR: z.string().default('./storage'),

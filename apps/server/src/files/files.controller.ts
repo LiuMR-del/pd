@@ -3,6 +3,8 @@ import type { Response } from 'express';
 import { badRequest, notFound } from '../common/http';
 import { RateLimiter } from '../common/rate-limit';
 import { UserGuard, UserId } from '../auth/guard';
+import { PrismaService } from '../prisma.service';
+import { unauthorized } from '../common/http';
 import { contentTypeOf, FileStore } from './file-store';
 
 @Controller('files')
@@ -11,6 +13,7 @@ export class FilesController {
   constructor(
     @Inject(FileStore) private readonly files: FileStore,
     @Inject(RateLimiter) private readonly limiter: RateLimiter,
+    @Inject(PrismaService) private readonly db: PrismaService,
   ) {}
 
   /** Raw image body (Content-Type image/png, image/jpeg or image/webp). */
@@ -18,6 +21,8 @@ export class FilesController {
   async upload(@UserId() userId: string, @Body() body: unknown) {
     if (!Buffer.isBuffer(body)) throw badRequest('请用图片格式上传（Content-Type: image/png、image/jpeg 或 image/webp）', 'file_type');
     this.limiter.hit(`upload:${userId}`, 300, 60 * 60_000);
+    // access tokens outlive a deleted account by up to 2 hours
+    if (!(await this.db.user.findUnique({ where: { id: userId }, select: { id: true } }))) throw unauthorized('账号不存在', 'user_not_found');
     return { key: await this.files.put(userId, body) };
   }
 

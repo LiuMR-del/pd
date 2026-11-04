@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AuthService } from '../src/auth/auth.service';
 import { registerUser, startServer, uniqueName, type TestServer } from './helpers';
 
 let s: TestServer;
@@ -79,10 +80,25 @@ describe('tokens', () => {
     expect(r1.status).toBe(200);
     const next = r1.body.refreshToken as string;
     expect(next).not.toBe(u.refresh);
+    s.app.get(AuthService).graceMs = 0;
     const replay = await s.call('POST', '/auth/refresh', { body: { refreshToken: u.refresh } });
+    s.app.get(AuthService).graceMs = 30_000;
     expect(replay.body.error.code).toBe('refresh_reused');
-    // the legit newer token was revoked too
+    // the legit newer token was revoked too (after the grace period a replay signs everyone out)
     expect((await s.call('POST', '/auth/refresh', { body: { refreshToken: next } })).status).toBe(401);
+  });
+
+  it('a token rotated moments ago (another tab) does not sign everyone out', async () => {
+    const u = await registerUser(s);
+    const fresh = (await s.call('POST', '/auth/refresh', { body: { refreshToken: u.refresh } })).body.refreshToken;
+    const raced = await s.call('POST', '/auth/refresh', { body: { refreshToken: u.refresh } });
+    expect(raced.body.error.code).toBe('refresh_raced');
+    expect((await s.call('POST', '/auth/refresh', { body: { refreshToken: fresh } })).status).toBe(200);
+  });
+
+  it('refuses the example JWT secret', async () => {
+    const { loadConfig } = await import('../src/config');
+    expect(() => loadConfig({ DATABASE_URL: 'mysql://x@y/z', JWT_SECRET: 'change-me-change-me-change-me-change-me' })).toThrow('示例值');
   });
 
   it('logout revokes the refresh token', async () => {
@@ -116,6 +132,8 @@ describe('profile', () => {
     expect((await s.call('DELETE', '/me', { token: u.token, body: { password: u.password } })).status).toBe(204);
     expect((await s.call('POST', '/auth/login', { body: { username: u.username, password: u.password } })).status).toBe(401);
     expect((await s.call('GET', '/me', { token: u.token })).status).toBe(404);
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16)]);
+    expect((await s.call('POST', '/files', { token: u.token, raw: png, type: 'image/png' })).status).toBe(401);
   });
 });
 

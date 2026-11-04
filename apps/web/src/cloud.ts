@@ -2,7 +2,7 @@ import { docFromDraft, type PatternDraftV1 } from '@pd/editor-core';
 import { account, cloudHooks } from './lib/account';
 import { api, ApiError, getTokens, onTokens, setTokens, type PublicUser } from './lib/api';
 import { deleteWork, getWork, newId, putWork, withLock, allWorks, type WorkRecord } from './lib/storage';
-import { ask, closeWork, flushSave, notify, openWork, patternThumb, refreshWorks, state } from './store';
+import { ask, closeWork, copyName, flushSave, notify, openWork, patternThumb, refreshWorks, retargetOpenWork, setOpenedBase, state } from './store';
 
 /**
  * Cloud sync for signed-in users. IndexedDB stays the primary store (works offline); this module
@@ -27,6 +27,12 @@ interface WorkDto extends WorkSummaryDto {
 interface AuthResult {
   user: PublicUser;
   tokens: { accessToken: string; refreshToken: string; expiresIn: number };
+}
+
+interface PendingDelete {
+  id: string;
+  /** Revision the user saw when deleting: newer changes elsewhere cancel the delete. */
+  revision: number;
 }
 
 const cursorKey = (uid: string) => `pd-web:sync-cursor:${uid}`;
@@ -54,10 +60,11 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export async function initCloud(): Promise<void> {
   cloudHooks.afterSave = () => scheduleSync(2000);
-  cloudHooks.afterDelete = (id) => {
+  cloudHooks.afterDelete = (id, revision) => {
     const uid = account.user?.id;
     if (!uid) return;
-    writeJson(pendingKey(uid), [...new Set([...readJson<string[]>(pendingKey(uid), []), id])]);
+    const list = readJson<PendingDelete[]>(pendingKey(uid), []).filter((p) => p.id !== id);
+    writeJson(pendingKey(uid), [...list, { id, revision }]);
     scheduleSync(0);
   };
   onTokens((t) => {
@@ -122,8 +129,9 @@ export async function logout(): Promise<void> {
 async function signedOut(msg: string): Promise<void> {
   const uid = account.user?.id;
   await flushSave();
-  if (getTokens()) setTokens(null);
+  // clear the user first: setTokens(null) notifies onTokens, which must not see a signed-in user
   account.user = null;
+  if (getTokens()) setTokens(null);
   account.sync = 'idle';
   account.message = msg;
   // the account's works stay on this device but are hidden while signed out
@@ -216,14 +224,18 @@ async function syncOnce(): Promise<void> {
 }
 
 async function pushDeletes(uid: string): Promise<void> {
-  const ids = readJson<string[]>(pendingKey(uid), []);
-  for (const id of ids) {
+  const list = readJson<(PendingDelete | string)[]>(pendingKey(uid), []).map((p) => (typeof p === 'string' ? { id: p, revision: 0 } : p));
+  for (const p of list) {
     try {
-      await api('DELETE', `/works/${id}`);
+      await api('DELETE', `/works/${p.id}${p.revision ? `?baseRevision=${p.revision}` : ''}`);
     } catch (e) {
-      if (!(e instanceof ApiError && e.status === 404)) throw e;
+      if (e instanceof ApiError && e.code === 'revision_conflict') {
+        // changed on another device after this one deleted it: bring it back with a full listing
+        writeJson(cursorKey(uid), null);
+        notify('有个作品在别的设备上改过，没有删除，已重新下载');
+      } else if (!(e instanceof ApiError && e.status === 404)) throw e;
     }
-    writeJson(pendingKey(uid), readJson<string[]>(pendingKey(uid), []).filter((x) => x !== id));
+    writeJson(pendingKey(uid), readJson<(PendingDelete | string)[]>(pendingKey(uid), []).filter((x) => (typeof x === 'string' ? x : x.id) !== p.id));
   }
 }
 
@@ -253,6 +265,8 @@ async function pull(uid: string): Promise<void> {
 
 /** Bring one remote change into IndexedDB. */
 async function applyRemote(uid: string, r: WorkSummaryDto): Promise<void> {
+  // the open work may have edits that are not in IndexedDB yet
+  if (state.workId === r.id) await flushSave();
   const local = await getWork(r.id);
   if (local?.owner && local.owner !== uid) return;
   if (r.deleted) {
@@ -261,7 +275,7 @@ async function applyRemote(uid: string, r: WorkSummaryDto): Promise<void> {
     await withLock(() => deleteWork(r.id));
     if (state.workId === r.id) {
       closeWork();
-      notify(local.dirty ? '这个作品已在别处删除，你的修改另存了一份' : '这个作品已在别处删除');
+      notify('这个作品已在别处删除');
     }
     return;
   }
@@ -310,15 +324,15 @@ async function fork(uid: string, snap: WorkRecord, suffix: string): Promise<stri
   if (open) await flushSave();
   const rec = (await getWork(snap.id)) ?? snap;
   const id = newId();
-  const name = `${rec.name}${suffix}`.slice(0, 60);
+  const name = suffix ? copyName(rec.name, suffix) : rec.name;
   const now = Date.now();
   await withLock(() =>
     putWork({ ...rec, id, name, updatedAt: now, draft: { ...rec.draft, id, name, updatedAt: now }, owner: uid, cloud: undefined, dirty: true }),
   );
-  if (open && state.workId === snap.id) {
-    // keep the user on their own edits
-    await openWork(id);
-    notify(`这个作品在别处也改过，你的修改另存为「${name}」`);
+  if (state.workId === snap.id) {
+    // keep editing the same document (with every edit, even ones made a moment ago) as the copy
+    retargetOpenWork(id, name);
+    notify(suffix ? `这个作品在别处也改过，你的修改另存为「${name}」` : '作品已另存一份');
   }
   again = true;
   return id;
@@ -366,6 +380,8 @@ async function upload(uid: string, snap: WorkRecord): Promise<void> {
     // edited again while uploading: stays dirty, goes up on the next round
     const same = cur.draft.updatedAt === snap.draft.updatedAt && cur.name === snap.name;
     await putWork({ ...cur, cloud: { revision: res.revision, sourceKey }, dirty: !same });
+    // the open document already contains what was uploaded: its base moves along
+    setOpenedBase(snap.id, res.revision);
     if (!same) again = true;
   });
 }

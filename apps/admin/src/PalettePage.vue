@@ -108,6 +108,7 @@ const fmt = (t: string) => new Date(t).toLocaleString('zh-CN');
       <el-button :disabled="!dirty" @click="load">放弃修改</el-button>
       <el-button type="primary" :disabled="!dirty" :loading="saving" @click="publish">发布</el-button>
     </div>
+    <el-alert type="info" :closable="false" style="margin-bottom: 12px" title="色数档的颜色数不能改（网页按颜色数识别色数档）：调整套装成员时请一进一出。" />
     <el-alert v-if="dirty" type="warning" :closable="false" title="有未发布的修改" style="margin-bottom: 12px" />
     <el-table :data="rows" border height="calc(100vh - 330px)" row-key="id" @row-click="edit">
       <el-table-column prop="id" label="编号" width="70" />

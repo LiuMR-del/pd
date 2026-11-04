@@ -42,7 +42,11 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
     } catch {
       /* not JSON */
     }
-    if (res.status === 401 && path !== '/admin/login') setToken(null);
+    if (res.status === 401 && path !== '/admin/login') {
+      // session over: back to the login form
+      setToken(null);
+      location.reload();
+    }
     throw new ApiError(res.status, msg);
   }
   return (await res.json()) as T;

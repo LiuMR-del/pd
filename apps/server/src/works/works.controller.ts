@@ -51,8 +51,9 @@ export class WorksController {
 
   @Delete(':id')
   @HttpCode(204)
-  async remove(@UserId() userId: string, @Param('id') id: string) {
-    await this.works.remove(userId, workId(id));
+  async remove(@UserId() userId: string, @Param('id') id: string, @Query() query: unknown) {
+    const q = parse(z.object({ baseRevision: z.coerce.number().int().min(1).optional() }), query);
+    await this.works.remove(userId, workId(id), q.baseRevision);
   }
 
   @Get(':id/versions')

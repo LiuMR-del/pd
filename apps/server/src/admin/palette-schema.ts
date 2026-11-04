@@ -34,7 +34,7 @@ const schema = z.object({
 });
 
 /** Structural + consistency checks for palette data edited in the admin. Returns problems in Chinese. */
-export function validatePalette(raw: unknown): { ok: true; data: PaletteData } | { ok: false; errors: string[] } {
+export function validatePalette(raw: unknown, current?: PaletteData): { ok: true; data: PaletteData } | { ok: false; errors: string[] } {
   const r = schema.safeParse(raw);
   if (!r.success) return { ok: false, errors: r.error.issues.slice(0, 10).map((i) => `${i.path.join('.')}：${i.message}`) };
   const d = r.data as PaletteData;
@@ -61,6 +61,16 @@ export function validatePalette(raw: unknown): { ok: true; data: PaletteData } |
     if (t.colorIds.some((id) => id >= d.colors.length)) errors.push(`色数档 ${t.id} 引用了不存在的颜色`);
     if (t.size !== t.colorIds.length) errors.push(`色数档 ${t.id} 的数量 ${t.size} 与颜色个数 ${t.colorIds.length} 不一致`);
   }
-  if (!d.tiers.some((t) => t.id === 'all')) errors.push('缺少「全部颜色」色数档（id 为 all）');
+  const all = d.tiers.find((t) => t.id === 'all');
+  if (!all) errors.push('缺少「全部颜色」色数档（id 为 all）');
+  else if (all.colorIds.length !== d.colors.length) errors.push('「全部颜色」色数档必须包含每一个颜色');
+  const sizes = d.tiers.map((t) => t.size);
+  if (new Set(sizes).size !== sizes.length) errors.push('两个色数档的颜色数相同');
+  // clients identify a tier by its size (saved settings, works): ids and sizes must not change
+  if (current) {
+    const want = current.tiers.map((t) => `${t.id}:${t.id === 'all' ? '*' : t.size}`).sort().join(',');
+    const got = d.tiers.map((t) => `${t.id}:${t.id === 'all' ? '*' : t.size}`).sort().join(',');
+    if (want !== got) errors.push(`色数档和各档颜色数不能改（现在是 ${want.replace(/:\*/, '')}）；调整套装成员时请一进一出，保持颜色数不变`);
+  }
   return errors.length ? { ok: false, errors: errors.slice(0, 20) } : { ok: true, data: d };
 }

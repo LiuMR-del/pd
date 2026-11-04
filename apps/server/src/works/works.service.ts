@@ -62,6 +62,7 @@ function validateDraft(id: string, raw: unknown): PatternDraftV1 {
   const d = raw as PatternDraftV1;
   if (d.id !== id) throw badRequest('图纸编号和地址不一致', 'invalid_draft');
   if (d.name.length > 100) throw badRequest('作品名最多 100 个字', 'invalid_draft');
+  if (!(d.updatedAt > 0 && d.updatedAt < 8.64e15)) throw badRequest('图纸时间无效', 'invalid_draft');
   return d;
 }
 
@@ -101,7 +102,8 @@ export class WorksService {
     const now = new Date();
     const stale: (string | null)[] = [];
 
-    const result = await this.db.$transaction(async (tx) => {
+    const result = await this.db
+      .$transaction(async (tx) => {
       const cur = await tx.work.findUnique({ where: { id } });
       if (cur && cur.userId !== userId) throw conflict('作品编号冲突，请另存一份', 'id_taken');
       if (cur?.deletedAt) throw conflict('这个作品已在别处删除', 'work_deleted');
@@ -149,16 +151,23 @@ export class WorksService {
       if (input.sourceKey !== undefined && cur.sourceKey !== input.sourceKey) stale.push(cur.sourceKey);
       if (reason) await this.snapshot(tx, id, cur.revision + 1, draft, reason);
       return tx.work.findUniqueOrThrow({ where: { id } });
-    });
+    })
+      .catch((e: unknown) => {
+        // two first saves of the same new work racing
+        if ((e as { code?: string }).code === 'P2002') throw conflict('这个作品已在别处修改过', 'revision_conflict');
+        throw e;
+      });
     for (const k of stale) await this.removeIfUnused(userId, k);
     return full(result);
   }
 
   /** Soft delete: the row stays as a tombstone for sync; history and files are removed. */
-  async remove(userId: string, id: string): Promise<void> {
+  async remove(userId: string, id: string, baseRevision?: number): Promise<void> {
     const w = await this.db.work.findUnique({ where: { id } });
     if (!w || w.userId !== userId) throw notFound('作品不存在或已删除', 'work_not_found');
     if (w.deletedAt) return;
+    // deleting from an outdated view would throw away changes made elsewhere
+    if (baseRevision !== undefined && baseRevision !== w.revision) throw conflict('这个作品在别处有新的修改，没有删除', 'revision_conflict');
     await this.db.$transaction([
       this.db.workVersion.deleteMany({ where: { workId: id } }),
       this.db.work.update({ where: { id }, data: { deletedAt: new Date(), draft: {}, meta: Prisma.DbNull, thumbKey: null, sourceKey: null, revision: { increment: 1 } } }),
@@ -227,6 +236,6 @@ export class WorksService {
 
   private async checkFile(userId: string, key: string | null | undefined) {
     if (key == null) return;
-    if (!FileStore.isKey(key) || !(await this.files.get(userId, key))) throw badRequest('引用的图片不存在，请重新上传', 'file_not_found');
+    if (!(await this.files.exists(userId, key))) throw badRequest('引用的图片不存在，请重新上传', 'file_not_found');
   }
 }

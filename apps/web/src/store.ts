@@ -80,6 +80,33 @@ const sourceBlobs = new WeakMap<SourceImage, Blob>();
 let unsubscribe: (() => void) | null = null;
 /** Bumped whenever the current work changes; async results from an older work are dropped. */
 let workSession = 0;
+/**
+ * Server revision the open document was based on when it was opened (or last uploaded). A save
+ * whose record has meanwhile been moved to another revision (another tab, a download) must not
+ * reuse that revision: it becomes a conflict copy instead.
+ */
+let openedBase: number | null = null;
+
+export function setOpenedBase(id: string, revision: number): void {
+  if (state.workId === id) openedBase = revision;
+}
+
+/** Name for a copy that keeps one side of a conflict (the suffix always survives truncation). */
+export function copyName(name: string, suffix: string): string {
+  return name.slice(0, Math.max(1, 60 - suffix.length)) + suffix;
+}
+
+/** Keep editing the open document, but as the (already created) work `id`. */
+export function retargetOpenWork(id: string, name: string): void {
+  const doc = state.doc;
+  if (!doc) return;
+  doc.id = id;
+  doc.name = name;
+  state.workId = id;
+  openedBase = null;
+  state.version++;
+  scheduleSave(0);
+}
 
 watch(
   () => state.settings,
@@ -157,6 +184,7 @@ function resetWork(): void {
   unsubscribe?.();
   unsubscribe = null;
   state.workId = '';
+  openedBase = null;
   state.doc = null;
   state.editor = null;
   state.appliedSettings = null;
@@ -390,10 +418,11 @@ interface SaveJob {
   doc: PatternDoc;
   source: SourceImage | null;
   crop: Rect | null;
+  base: number | null;
 }
 
 function currentJob(): SaveJob | null {
-  return state.doc ? { doc: state.doc, source: state.source, crop: plainCrop() } : null;
+  return state.doc ? { doc: state.doc, source: state.source, crop: plainCrop(), base: openedBase } : null;
 }
 
 export function scheduleSave(delay = 800): void {
@@ -432,9 +461,27 @@ async function saveNow(job: SaveJob): Promise<void> {
   const { doc } = job;
   try {
     const source = await sourceBlob(job.source);
+    let forked = '';
     await withLock(async () => {
       // keep the sync fields; a new work belongs to the signed-in account
-      const prev = await getWork(doc.id);
+      let prev = await getWork(doc.id);
+      if (prev?.cloud && prev.cloud.revision !== job.base) {
+        // the stored work moved on (other tab / other device) since this document was opened
+        const owner = prev.owner;
+        forked = copyName(doc.name, '（冲突副本）');
+        const id = newId();
+        if (state.doc === doc) {
+          doc.id = id;
+          doc.name = forked;
+          state.workId = id;
+          openedBase = null;
+          state.version++;
+        } else {
+          doc.id = id;
+          doc.name = forked;
+        }
+        prev = { ...prev, owner, cloud: undefined };
+      }
       await putWork({
         id: doc.id,
         name: doc.name,
@@ -450,6 +497,7 @@ async function saveNow(job: SaveJob): Promise<void> {
     });
     // a newer edit may already be waiting; then the work is not saved yet
     if (state.doc === doc && saveTimer === undefined) state.saveState = 'saved';
+    if (forked) notify(`这个作品在别处有新版本，你的修改另存为「${forked}」`);
     cloudHooks.afterSave();
   } catch (e) {
     console.error('save failed', e);
@@ -519,6 +567,7 @@ export async function openWork(id: string): Promise<void> {
     state.settings = normalizeSettings({ ...meta.settings, ...docBrand });
     state.crop = meta.crop ?? null;
     state.workId = doc.id;
+    openedBase = rec.cloud?.revision ?? null;
     attachDoc(doc);
     state.appliedSettings = normalizeSettings({ ...meta.settings, ...docBrand });
     state.appliedCrop = meta.crop ?? null;
@@ -549,7 +598,7 @@ export async function removeWork(id: string, name: string): Promise<void> {
     } else {
       await withLock(() => dbDelete(id));
     }
-    if (synced) cloudHooks.afterDelete(id);
+    if (synced) cloudHooks.afterDelete(id, rec!.cloud!.revision);
   } catch {
     notify('删除失败，请稍后再试');
   }

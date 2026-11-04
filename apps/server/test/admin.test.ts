@@ -29,6 +29,21 @@ describe('palette validation', () => {
     const r = validatePalette(clone(paletteData));
     expect(r.ok ? [] : r.errors).toEqual([]);
   });
+  it('keeps tier sizes: clients identify tiers by size', () => {
+    const d = clone(paletteData);
+    const t = d.tiers.find((x) => x.id !== 'all')!;
+    t.colorIds = t.colorIds.slice(1);
+    t.size = t.colorIds.length;
+    const r = validatePalette(d, paletteData);
+    expect(r.ok ? '' : r.errors.join()).toContain('颜色数不能改');
+    // swapping one color for another keeps the size and is allowed
+    const swap = clone(paletteData);
+    const k = swap.tiers.find((x) => x.id !== 'all')!;
+    const outside = swap.colors.find((c) => !k.colorIds.includes(c.id))!.id;
+    k.colorIds[0] = outside;
+    expect(validatePalette(swap, paletteData).ok).toBe(true);
+  });
+
   it('reports duplicate codes, bad colors and broken tiers', () => {
     const d = clone(paletteData);
     d.colors[1].codes.MARD = d.colors[0].codes.MARD;

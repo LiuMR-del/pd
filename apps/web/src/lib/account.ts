@@ -20,5 +20,5 @@ export const userId = (): string | null => account.user?.id ?? null;
 export const cloudHooks = {
   afterSave: () => {},
   /** A synced work was deleted locally: delete it on the server too. */
-  afterDelete: (_id: string) => {},
+  afterDelete: (_id: string, _revision: number) => {},
 };
