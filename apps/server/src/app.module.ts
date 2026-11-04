@@ -9,6 +9,11 @@ import { FileStore } from './files/file-store';
 import { HealthController } from './health.controller';
 import { PrismaService } from './prisma.service';
 import { MeController } from './users/me.controller';
+import { FilesController } from './files/files.controller';
+import { PalettesController } from './palettes/palettes.controller';
+import { PalettesService } from './palettes/palettes.service';
+import { WorksController } from './works/works.controller';
+import { WorksService } from './works/works.service';
 
 export interface AppOverrides {
   wxFetch?: WxFetch;
@@ -21,7 +26,7 @@ export class AppModule {
   static register(config: AppConfig, overrides: AppOverrides = {}): DynamicModule {
     return {
       module: AppModule,
-      controllers: [HealthController, AuthController, MeController],
+      controllers: [HealthController, AuthController, MeController, WorksController, FilesController, PalettesController],
       providers: [
         { provide: CONFIG, useValue: config },
         { provide: WX_FETCH, useValue: overrides.wxFetch ?? ((url: string) => fetch(url)) },
@@ -33,6 +38,8 @@ export class AppModule {
         UserGuard,
         AdminGuard,
         FileStore,
+        WorksService,
+        PalettesService,
       ],
     };
   }

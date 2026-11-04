@@ -7,7 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "postinstall": "pnpm --filter @pd/palettes build:data",
+    "postinstall": "pnpm --filter @pd/palettes build:data && pnpm --filter @pd/server db:generate",
     "palettes:sync": "pnpm --filter @pd/palettes fetch:mard && pnpm --filter @pd/palettes build:data",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
