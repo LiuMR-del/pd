@@ -11,9 +11,15 @@ export interface WorkRecord {
   /** Downscaled source image and the crop used, or null when unavailable. */
   source: Blob | null;
   crop: { x: number; y: number; w: number; h: number } | null;
+  /** Account (user id) the work belongs to; absent = made while signed out, on this device only. */
+  owner?: string;
+  /** Server copy this record was last synced with; absent = never uploaded. */
+  cloud?: { revision: number; sourceKey: string | null };
+  /** Changed locally since the last upload. */
+  dirty?: boolean;
 }
 
-export type WorkSummary = Pick<WorkRecord, 'id' | 'name' | 'updatedAt' | 'thumb'>;
+export type WorkSummary = Pick<WorkRecord, 'id' | 'name' | 'updatedAt' | 'thumb' | 'owner' | 'dirty'> & { synced: boolean };
 
 const DB_NAME = 'pd-web';
 const STORE = 'works';
@@ -60,10 +66,31 @@ export function deleteWork(id: string): Promise<undefined> {
   return run('readwrite', (s) => s.delete(id) as IDBRequest<undefined>);
 }
 
-/** All works, most recently edited first (without the heavy draft / source fields). */
-export async function listWorks(): Promise<WorkSummary[]> {
-  const all = await run('readonly', (s) => s.getAll() as IDBRequest<WorkRecord[]>);
-  return all.map(({ id, name, updatedAt, thumb }) => ({ id, name, updatedAt, thumb })).sort((a, b) => b.updatedAt - a.updatedAt);
+export function allWorks(): Promise<WorkRecord[]> {
+  return run('readonly', (s) => s.getAll() as IDBRequest<WorkRecord[]>);
+}
+
+/**
+ * Works visible to `userId` (null = signed out): this device's own works plus that account's,
+ * most recently edited first, without the heavy draft / source fields.
+ */
+export async function listWorks(userId: string | null): Promise<WorkSummary[]> {
+  const all = await allWorks();
+  return all
+    .filter((w) => !w.owner || w.owner === userId)
+    .map(({ id, name, updatedAt, thumb, owner, dirty, cloud }) => ({ id, name, updatedAt, thumb, owner, dirty, synced: !!cloud && !dirty }))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+let lock: Promise<unknown> = Promise.resolve();
+/**
+ * Runs read-modify-write steps on work records one at a time (autosave and cloud sync both update
+ * records). Keep network calls outside: the lock is meant for short IndexedDB work only.
+ */
+export function withLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = lock.then(fn, fn);
+  lock = next.catch(() => undefined);
+  return next;
 }
 
 export function newId(): string {

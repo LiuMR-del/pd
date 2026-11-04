@@ -8,7 +8,8 @@ import { CancelledError, Generator } from './lib/generator';
 import { canvasToBlob, decodeImage, thumbnail, toRgba, type Rect, type SourceImage } from './lib/image';
 import { defaultQrSettings, defaultTextSettings, makePattern, makerName, normalizeQr, normalizeText, type ColorId, type Kind, type QrSettings, type TextSettings } from './lib/makers';
 import { normalizeSettings, toPatternOptions, type Settings } from './lib/settings';
-import { deleteWork as dbDelete, getWork, listWorks, loadLastSettings, newId, putWork, saveLastSettings, type WorkSummary } from './lib/storage';
+import { account, cloudHooks, userId } from './lib/account';
+import { deleteWork as dbDelete, getWork, listWorks, loadLastSettings, newId, putWork, saveLastSettings, withLock, type WorkRecord, type WorkSummary } from './lib/storage';
 
 export type Tool = 'move' | 'pen' | 'eraser' | 'picker' | 'fill' | 'replace';
 export type Phase = 'empty' | 'ready' | 'result';
@@ -68,7 +69,9 @@ export const state = reactive({
   confirm: null as ConfirmRequest | null,
   colorPick: null as ColorPickRequest | null,
   /** Open dialog / sheet. */
-  dialog: null as null | 'crop' | 'export' | 'works' | 'palette' | 'settings' | 'brand',
+  dialog: null as null | 'crop' | 'export' | 'works' | 'palette' | 'settings' | 'brand' | 'account' | 'history' | 'legal',
+  /** Which text the legal dialog shows. */
+  legal: 'privacy' as 'privacy' | 'terms',
 });
 
 const generator = new Generator();
@@ -428,17 +431,26 @@ async function sourceBlob(src: SourceImage | null): Promise<Blob | null> {
 async function saveNow(job: SaveJob): Promise<void> {
   const { doc } = job;
   try {
-    await putWork({
-      id: doc.id,
-      name: doc.name,
-      updatedAt: doc.updatedAt,
-      thumb: patternThumb(doc),
-      draft: docToDraft(doc),
-      source: await sourceBlob(job.source),
-      crop: job.crop,
+    const source = await sourceBlob(job.source);
+    await withLock(async () => {
+      // keep the sync fields; a new work belongs to the signed-in account
+      const prev = await getWork(doc.id);
+      await putWork({
+        id: doc.id,
+        name: doc.name,
+        updatedAt: doc.updatedAt,
+        thumb: patternThumb(doc),
+        draft: docToDraft(doc),
+        source,
+        crop: job.crop,
+        owner: prev ? prev.owner : userId() ?? undefined,
+        cloud: prev?.cloud,
+        dirty: true,
+      });
     });
     // a newer edit may already be waiting; then the work is not saved yet
     if (state.doc === doc && saveTimer === undefined) state.saveState = 'saved';
+    cloudHooks.afterSave();
   } catch (e) {
     console.error('save failed', e);
     if (state.doc === doc) state.saveState = 'error';
@@ -456,7 +468,9 @@ async function saveBackup(): Promise<void> {
   if (!doc) return;
   await flushSave();
   const copy: PatternDoc = { ...doc, id: newId(), name: `${doc.name}（修改前）`, cells: doc.cells.slice(), palette: doc.palette.slice(), updatedAt: Date.now() };
-  await putWork({ id: copy.id, name: copy.name, updatedAt: copy.updatedAt, thumb: patternThumb(copy), draft: docToDraft(copy), source: await sourceBlob(state.source), crop: plainCrop() });
+  const owner = (await getWork(doc.id))?.owner;
+  await putWork({ id: copy.id, name: copy.name, updatedAt: copy.updatedAt, thumb: patternThumb(copy), draft: docToDraft(copy), source: await sourceBlob(state.source), crop: plainCrop(), owner, dirty: true });
+  cloudHooks.afterSave();
   await refreshWorks();
 }
 
@@ -471,7 +485,7 @@ export function patternThumb(doc: PatternDoc, max = 240): string {
 
 export async function refreshWorks(): Promise<void> {
   try {
-    state.works = await listWorks();
+    state.works = await listWorks(userId());
   } catch {
     state.works = [];
   }
@@ -482,7 +496,7 @@ export async function openWork(id: string): Promise<void> {
   try {
     await flushSave();
     const rec = await getWork(id);
-    if (!rec) throw new Error('作品不存在或已被删除');
+    if (!rec || (rec.owner && rec.owner !== userId())) throw new Error('作品不存在或已被删除');
     let doc: PatternDoc;
     try {
       doc = docFromDraft(rec.draft);
@@ -519,22 +533,36 @@ export async function openWork(id: string): Promise<void> {
 }
 
 export async function removeWork(id: string, name: string): Promise<void> {
-  if (!(await ask('删除作品？', `「${name}」会从本机删除，无法恢复。`, '删除', true))) return;
+  const rec = await getWork(id).catch(() => undefined);
+  const synced = !!rec?.cloud && !!account.user && rec.owner === account.user.id;
+  if (!(await ask('删除作品？', synced ? `「${name}」会从本机和云端一起删除，无法恢复。` : `「${name}」会从本机删除，无法恢复。`, '删除', true))) return;
   try {
     if (state.workId === id) {
       // stop autosave first, or it would write the work back right after deleting it
       await flushSave();
-      await dbDelete(id);
+      await withLock(() => dbDelete(id));
       resetWork();
       state.kind = 'image';
       state.source = null;
       state.crop = null;
       state.phase = 'empty';
     } else {
-      await dbDelete(id);
+      await withLock(() => dbDelete(id));
     }
+    if (synced) cloudHooks.afterDelete(id);
   } catch {
     notify('删除失败，请稍后再试');
   }
   await refreshWorks();
 }
+
+/** Leave the current work without saving again (used when it disappears: deleted elsewhere, account removed). */
+export function closeWork(): void {
+  resetWork();
+  state.kind = 'image';
+  state.source = null;
+  state.crop = null;
+  state.phase = 'empty';
+}
+
+export type { WorkRecord };

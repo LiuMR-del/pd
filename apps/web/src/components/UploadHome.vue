@@ -58,10 +58,25 @@ function fmt(t: number): string {
       </ul>
       <button v-if="state.works.length > 8" class="btn ghost" @click="state.dialog = 'works'">查看全部 {{ state.works.length }} 个作品</button>
     </section>
+    <footer class="site-foot">
+      <a href="#" @click.prevent="(state.legal = 'terms'), (state.dialog = 'legal')">用户协议</a>
+      <a href="#" @click.prevent="(state.legal = 'privacy'), (state.dialog = 'legal')">隐私政策</a>
+      <a href="https://github.com/LiuMR-del/pd" target="_blank" rel="noopener">源码（AGPL-3.0）</a>
+    </footer>
   </div>
 </template>
 
 <style scoped>
+.site-foot {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px 0 8px;
+  font-size: 13px;
+}
+.site-foot a {
+  color: var(--muted);
+}
 .home {
   max-width: 720px;
   margin: 0 auto;

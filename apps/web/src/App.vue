@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import AccountDialog from './components/AccountDialog.vue';
 import BrandDialog from './components/BrandDialog.vue';
+import HistoryDialog from './components/HistoryDialog.vue';
+import LegalDialog from './components/LegalDialog.vue';
 import CanvasView from './components/CanvasView.vue';
 import ColorPickDialog from './components/ColorPickDialog.vue';
 import ConfirmDialog from './components/ConfirmDialog.vue';
@@ -16,6 +19,7 @@ import WorksDialog from './components/WorksDialog.vue';
 import { KIND_LABELS } from './lib/makers';
 import { settingsSummary, tierLabel } from './lib/settings';
 import { thumbnail } from './lib/image';
+import { account } from './lib/account';
 import { flushSave, generate, loadFile, redo, rename, startOver, state, totalBeads, undo, usage, type Tool } from './store';
 
 const tab = ref<'settings' | 'usage'>('settings');
@@ -30,6 +34,12 @@ const saveText = computed(() =>
     ? { idle: '', saving: '保存中', saved: '已保存', error: '保存失败' }[state.saveState]
     : { idle: '', saving: '保存中…', saved: '已保存到本机', error: '本机保存失败，请导出图纸备份' }[state.saveState],
 );
+const cloudBadge = computed(() => {
+  if (!account.user) return '';
+  return { idle: '', syncing: '同步中', synced: '已同步', offline: '离线', error: '同步出错' }[account.sync];
+});
+const accountLabel = computed(() => (account.user ? account.user.nickname || account.user.username || '账号' : '登录'));
+const canHistory = computed(() => !!account.user && !!state.doc);
 const summary = computed(() => {
   void state.version;
   if (!state.doc) return '';
@@ -118,7 +128,12 @@ function commitName(e: Event): void {
       <span class="save" :class="state.saveState" aria-live="polite">{{ saveText }}</span>
       <span class="spacer" />
       <button v-if="state.phase !== 'empty'" class="btn ghost" @click="startOver">新建</button>
+      <button v-if="canHistory" class="btn ghost hide-narrow" @click="state.dialog = 'history'">历史版本</button>
       <button class="btn ghost" @click="state.dialog = 'works'">我的作品</button>
+      <button class="btn ghost account" :title="account.user ? '账号与同步' : '登录后作品保存到云端'" @click="state.dialog = 'account'">
+        <span class="acct-name">{{ accountLabel }}</span>
+        <span v-if="cloudBadge" class="cloud" :class="account.sync">{{ cloudBadge }}</span>
+      </button>
     </header>
 
     <div v-if="state.phase === 'empty'" class="scroll"><UploadHome @pick="pick" /></div>
@@ -170,6 +185,9 @@ function commitName(e: Event): void {
     <WorksDialog v-if="state.dialog === 'works'" />
     <PaletteDialog v-if="state.dialog === 'palette' && state.doc" />
     <BrandDialog v-if="state.dialog === 'brand' && state.doc" />
+    <AccountDialog v-if="state.dialog === 'account'" />
+    <HistoryDialog v-if="state.dialog === 'history' && state.doc" />
+    <LegalDialog v-if="state.dialog === 'legal'" />
     <ColorPickDialog v-if="state.colorPick" />
     <ConfirmDialog />
     <div v-if="state.notice" class="toast" role="status">{{ state.notice }}</div>
@@ -177,6 +195,32 @@ function commitName(e: Event): void {
 </template>
 
 <style scoped>
+.account {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+}
+.acct-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.cloud.offline,
+.cloud.error {
+  color: var(--warn);
+}
+@media (max-width: 767px) {
+  .hide-narrow,
+  .cloud {
+    display: none;
+  }
+}
 .app {
   height: 100dvh;
   display: flex;

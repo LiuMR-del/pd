@@ -16,6 +16,11 @@ export async function createApp(config: AppConfig, overrides: AppOverrides = {},
   app.useBodyParser('raw', { type: ['image/png', 'image/jpeg', 'image/webp', 'application/octet-stream'], limit: '8mb' });
   app.set('trust proxy', 'loopback');
   app.disable('x-powered-by');
+  // account data must not be kept in browser / proxy caches; files and palettes set their own policy
+  app.use((_req: unknown, res: { setHeader(k: string, v: string): void }, next: () => void) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
   app.useGlobalFilters(new ErrorFilter());
   app.enableCors({ origin: config.corsOrigins, maxAge: 600 });
   app.setGlobalPrefix('api');
