@@ -50,6 +50,8 @@ interface MpCanvas {
   height: number;
   getContext(type: '2d'): MpCanvasContext;
   createImage(): MpImage;
+  /** Only on-screen canvas nodes have it (offscreen canvases do not). */
+  requestAnimationFrame?(callback: () => void): number;
 }
 
 declare const wx: {
