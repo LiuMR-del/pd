@@ -4,17 +4,18 @@ rem Local MySQL for apps/server on Windows, instead of docker compose (same port
 rem   tools\env\mysql.cmd start    first run: initialize data dir + run mysql-init.sql; then start in background
 rem   tools\env\mysql.cmd stop
 rem   tools\env\mysql.cmd status
-rem MySQL 8.4 unzipped to %PD_ENV_DIR%\mysql with my.ini next to bin\ (port 3307, 127.0.0.1 only).
+rem MySQL 8.4 unzipped to C:\Data\mysql with my.ini next to bin\ (port 3307, 127.0.0.1 only).
+rem Elsewhere: set PD_MYSQL_DIR=... first. Use an ASCII-only path: mysqld garbles non-ASCII paths.
 rem Not a Windows service: nothing is registered on the machine; start it again after a reboot.
 rem Keep comments ASCII: after chcp 65001, cmd misparses lines with multi-byte text.
 
-if not defined PD_ENV_DIR set "PD_ENV_DIR=C:\Data\Project\环境"
-set "MY_HOME=%PD_ENV_DIR%\mysql"
+if not defined PD_MYSQL_DIR set "PD_MYSQL_DIR=C:\Data\mysql"
+set "MY_HOME=%PD_MYSQL_DIR%"
 set "MY_BIN=%MY_HOME%\bin"
 set "MY_CONN=--protocol=TCP -h 127.0.0.1 -P 3307"
 
 if not exist "%MY_BIN%\mysqld.exe" (
-  echo Not found: "%MY_BIN%\mysqld.exe". Unzip MySQL 8.4 there, or set PD_ENV_DIR.
+  echo Not found: "%MY_BIN%\mysqld.exe". Unzip MySQL 8.4 there, or set PD_MYSQL_DIR.
   exit /b 1
 )
 if not exist "%MY_HOME%\my.ini" (
@@ -42,8 +43,8 @@ if not exist "%MY_HOME%\data\mysql" (
   popd
   set "MY_FRESH=1"
 )
-rem Launch by RELATIVE path from MY_HOME on purpose: mysqld garbles non-ASCII paths (in my.ini, and the
-rem install dir it derives from a full exe path), but resolves relative ones correctly.
+rem Launch by relative path from MY_HOME: still works if PD_MYSQL_DIR ever contains non-ASCII characters
+rem (mysqld garbles those in my.ini and in the install dir it derives from a full exe path).
 powershell -NoProfile -Command "Start-Process -FilePath cmd.exe -ArgumentList '/c bin\mysqld.exe --defaults-file=my.ini' -WorkingDirectory $env:MY_HOME -WindowStyle Hidden"
 for /l %%i in (1,1,30) do (
   call :ping && goto started
