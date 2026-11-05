@@ -33,7 +33,7 @@ pnpm build:web      # 打包网页到 apps/web/dist/（静态文件）
 pnpm bench          # 跑评测，输出到 tools/bench/out/（需先把测试图放进 tools/bench/images/）
 ```
 
-### 后端与后台（阶段 2，需要 Docker）
+### 后端与后台（阶段 2，需要 MySQL：Mac 用 Docker，Windows 用 `tools\env\mysql.cmd`）
 
 ```bash
 pnpm db:up                                        # 启动 MySQL（首次自动建 pd / pd_shadow / pd_test 三个库）
@@ -45,6 +45,8 @@ pnpm --filter @pd/server admin:create <用户名>    # 创建后台管理员（�
 pnpm dev:admin                                    # 后台 http://localhost:5174
 pnpm db:down                                      # 停止 MySQL（数据保留；docker compose down -v 才会删数据）
 ```
+
+Windows 不用 Docker：`tools\env\mysql.cmd start` / `stop` / `status` 启停免安装版 MySQL（端口、库、账号与 docker-compose.yml 相同，`.env.example` 不用改），详见 `docs/双机开发.md`。
 
 `pnpm -r test` 会跑后端的接口测试，需要 MySQL 已启动（测试写入 `pd_test` 库，不清库）。改表结构用 `pnpm --filter @pd/server db:migrate`。
 
