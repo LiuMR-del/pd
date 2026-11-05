@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { getPalette } from '@pd/palettes';
-import { tierLabel } from '../lib/settings';
+import { tierLabel } from '@pd/app-shared';
 import { notify, state } from '../store';
 import Modal from './Modal.vue';
 

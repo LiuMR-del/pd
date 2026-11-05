@@ -17,7 +17,7 @@ import UploadHome from './components/UploadHome.vue';
 import UsagePanel from './components/UsagePanel.vue';
 import WorksDialog from './components/WorksDialog.vue';
 import { KIND_LABELS } from './lib/makers';
-import { settingsSummary, tierLabel } from './lib/settings';
+import { settingsSummary, tierLabel } from '@pd/app-shared';
 import { thumbnail } from './lib/image';
 import { account } from './lib/account';
 import { flushSave, generate, loadFile, redo, rename, startOver, state, totalBeads, undo, usage, type Tool } from './store';

@@ -202,6 +202,9 @@ importers:
       '@dcloudio/uni-mp-weixin':
         specifier: 3.0.0-5030420261029002
         version: 3.0.0-5030420261029002(debug@4.4.3(supports-color@5.5.0))(postcss@8.5.32)(rollup@4.67.5)(supports-color@5.5.0)(vue@3.4.21(typescript@5.9.3))
+      '@pd/app-shared':
+        specifier: workspace:*
+        version: link:../../packages/app-shared
       '@pd/editor-core':
         specifier: workspace:*
         version: link:../../packages/editor-core
@@ -312,6 +315,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@pd/app-shared':
+        specifier: workspace:*
+        version: link:../../packages/app-shared
       '@pd/editor-core':
         specifier: workspace:*
         version: link:../../packages/editor-core
@@ -349,6 +355,22 @@ importers:
       vue-tsc:
         specifier: 3.3.13
         version: 3.3.13(typescript@5.9.3)
+
+  packages/app-shared:
+    dependencies:
+      '@pd/palettes':
+        specifier: workspace:*
+        version: link:../palettes
+      '@pd/pattern-core':
+        specifier: workspace:*
+        version: link:../pattern-core
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@24.19.2)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
 
   packages/editor-core:
     dependencies:

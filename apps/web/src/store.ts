@@ -7,7 +7,7 @@ import { drawPattern } from '@pd/render';
 import { CancelledError, Generator } from './lib/generator';
 import { canvasToBlob, decodeImage, thumbnail, toRgba, type Rect, type SourceImage } from './lib/image';
 import { defaultQrSettings, defaultTextSettings, makePattern, makerName, normalizeQr, normalizeText, type ColorId, type Kind, type QrSettings, type TextSettings } from './lib/makers';
-import { normalizeSettings, toPatternOptions, type Settings } from './lib/settings';
+import { normalizeSettings, toPatternOptions, type Settings } from '@pd/app-shared';
 import { account, cloudHooks, userId } from './lib/account';
 import { deleteWork as dbDelete, getWork, listWorks, loadLastSettings, newId, putWork, saveLastSettings, withLock, type WorkRecord, type WorkSummary } from './lib/storage';
 

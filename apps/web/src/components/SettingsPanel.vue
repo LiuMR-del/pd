@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { BRANDS, listTiers } from '@pd/palettes';
 import { thumbnail } from '../lib/image';
-import { SIZE_LABELS, STYLE_LABELS, tierLabel, withSize, type SizeChoice, type Style } from '../lib/settings';
+import { SIZE_LABELS, STYLE_LABELS, tierLabel, withSize, type SizeChoice, type Style } from '@pd/app-shared';
 import { cancelGenerate, generate, settingsChanged, state } from '../store';
 import NumberField from './NumberField.vue';
 import QrFields from './QrFields.vue';

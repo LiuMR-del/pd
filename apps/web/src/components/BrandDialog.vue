@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { planBrandConversion } from '@pd/editor-core';
 import { BRANDS, getTier, listTiers, paletteData } from '@pd/palettes';
-import { tierLabel } from '../lib/settings';
+import { tierLabel } from '@pd/app-shared';
 import { convertBrand, notify, state } from '../store';
 import Modal from './Modal.vue';
 

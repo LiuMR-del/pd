@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { defaultSettings, normalizeSettings, toPatternOptions, withSize } from '../src/lib/settings';
+import { defaultSettings, normalizeSettings, toPatternOptions, withSize } from '../src/settings';
 
-describe('web settings', () => {
+describe('generation settings', () => {
   it('maps presets and user choices to algorithm options', () => {
     const s = { ...defaultSettings(), style: 'photo' as const, removeBackground: true };
     const o = toPatternOptions(s);

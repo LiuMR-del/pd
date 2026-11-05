@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { tierColors } from '../lib/makers';
-import { tierLabel } from '../lib/settings';
+import { tierLabel } from '@pd/app-shared';
 import { answerColor, state } from '../store';
 import Modal from './Modal.vue';
 

@@ -4,6 +4,7 @@ import { getPalette } from '@pd/palettes';
 import { presetOptions } from '@pd/pattern-core';
 import { ref } from 'vue';
 import { CancelledError, Generator } from '../../lib/generator';
+import { pickImage } from '../../lib/image';
 import { createMpWorker } from '../../lib/mp-worker';
 import { describeResult, makeTestImage } from '../../lib/self-test';
 
@@ -28,6 +29,15 @@ async function selfTest() {
   }
 }
 
+async function pickAndOpen() {
+  try {
+    const path = await pickImage();
+    if (path) uni.navigateTo({ url: `/pages/editor/editor?src=${encodeURIComponent(path)}` });
+  } catch (e) {
+    uni.showToast({ title: e instanceof Error ? e.message : String(e), icon: 'none' });
+  }
+}
+
 function openWorks() {
   uni.navigateTo({ url: '/pages/works/works' });
 }
@@ -40,7 +50,7 @@ function openWorks() {
       <view class="muted">图片 / 文字 / 二维码 → 带色号的拼豆图纸</view>
     </view>
 
-    <button class="btn btn-primary" disabled>选图片生成（开发中）</button>
+    <button class="btn btn-primary" @tap="pickAndOpen">选图片生成</button>
     <button class="btn" disabled>文字转图纸（开发中）</button>
     <button class="btn" disabled>二维码转图纸（开发中）</button>
     <button class="btn" @tap="openWorks">我的作品</button>
