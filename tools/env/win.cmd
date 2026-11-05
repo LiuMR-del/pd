@@ -1,20 +1,21 @@
 @echo off
 chcp 65001 >nul
-rem Windows 开工脚本：只在当前命令行窗口里临时加 PATH，不改系统设置。
-rem   tools\env\win.cmd                 当前 cmd 窗口生效，之后直接敲 pnpm / git
-rem   tools\env\win.cmd pnpm dev:web    设置后直接运行一条命令（PowerShell 里也能这样用）
-rem 工具目录默认 C:\Data\Project\环境，放在别处时先 set PD_ENV_DIR=其他目录
+rem Windows dev setup: prepend tools to PATH for this window only, no system changes.
+rem   tools\env\win.cmd                 apply to the current cmd window, then use pnpm / git
+rem   tools\env\win.cmd pnpm dev:web    apply and run one command (also works from PowerShell)
+rem Tools dir defaults to the shared env folder below; override with set PD_ENV_DIR=...
+rem Keep comments ASCII: after chcp 65001, cmd misparses lines with multi-byte text.
 
 if not defined PD_ENV_DIR set "PD_ENV_DIR=C:\Data\Project\环境"
 
 if not exist "%PD_ENV_DIR%\node\node.exe" (
-  echo 找不到 "%PD_ENV_DIR%\node\node.exe"，请先 set PD_ENV_DIR=工具目录
+  echo Not found: "%PD_ENV_DIR%\node\node.exe". Run: set PD_ENV_DIR=your tools dir
   exit /b 1
 )
 
 set "PATH=%PD_ENV_DIR%\node;%PD_ENV_DIR%\git\cmd;%PATH%"
 
-rem 沿用 node_modules 安装时用的 pnpm store，避免换 store 后整个重装
+rem Reuse the pnpm store node_modules was installed with, so a store change does not force a full reinstall
 if exist "%~dp0..\..\node_modules\.modules.yaml" (
   for /f "tokens=1,*" %%a in ('findstr /b "storeDir:" "%~dp0..\..\node_modules\.modules.yaml"') do (
     for %%I in ("%%b") do set "npm_config_store_dir=%%~dpI"
