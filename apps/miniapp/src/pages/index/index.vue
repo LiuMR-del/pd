@@ -3,16 +3,19 @@ import { onUnload } from '@dcloudio/uni-app';
 import { getPalette } from '@pd/palettes';
 import { presetOptions } from '@pd/pattern-core';
 import { ref } from 'vue';
-import { CancelledError, Generator } from '../../lib/generator';
+import { CancelledError } from '../../lib/generator';
 import { pickImage } from '../../lib/image';
-import { createMpWorker } from '../../lib/mp-worker';
+import { sharedGenerator } from '../../lib/mp-worker';
 import { describeResult, makeTestImage } from '../../lib/self-test';
 
-const generator = new Generator(createMpWorker);
+const generator = sharedGenerator();
 const running = ref(false);
 const report = ref('');
 
-onUnload(() => generator.dispose());
+// the worker is shared by all pages: only stop the self-test this page started
+onUnload(() => {
+  if (running.value) generator.cancel();
+});
 
 /** Developer self-test: synthetic image → worker → pattern (default MARD 221 kit, cartoon preset). */
 async function selfTest() {

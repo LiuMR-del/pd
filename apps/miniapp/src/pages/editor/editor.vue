@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onLoad, onReady, onUnload } from '@dcloudio/uni-app';
+import { onHide, onLoad, onReady, onUnload } from '@dcloudio/uni-app';
 import { normalizeSettings, toPatternOptions, type Settings } from '@pd/app-shared';
 import { beadCount, colorUsage, docFromPattern, EMPTY_CELL, PatternEditor, type PaletteEntry, type PatternDoc } from '@pd/editor-core';
 import { getPalette } from '@pd/palettes';
@@ -7,21 +7,24 @@ import type { RgbaImage } from '@pd/pattern-core';
 import { cellAtPoint, drawPattern, type Ctx2D, type PatternView } from '@pd/render';
 import { computed, getCurrentInstance, ref, shallowRef, watch } from 'vue';
 import ColorSheet from '../../components/ColorSheet.vue';
+import ExportCard from '../../components/ExportCard.vue';
 import SettingsPanel from '../../components/SettingsPanel.vue';
 import UsageSheet from '../../components/UsageSheet.vue';
 import { dragRect, fullRect, hitHandle, isFull, scaleRect, type Handle, type Rect, type Size } from '../../lib/crop';
-import { CancelledError, Generator } from '../../lib/generator';
+import { CancelledError } from '../../lib/generator';
 import { decodeImage, loadCanvasImage } from '../../lib/image';
 import { loadLastSettings, saveLastSettings } from '../../lib/last-settings';
 import { queryCanvas, touchPoint, type CanvasHandle } from '../../lib/mp-canvas';
-import { createMpWorker } from '../../lib/mp-worker';
+import { renderThumb, worksStore } from '../../lib/mp-files';
+import { sharedGenerator } from '../../lib/mp-worker';
 import { cropRgba } from '../../lib/pixels';
 import { fitContain, type Fit } from '../../lib/view';
 import { fitViewport, keepVisible, MIN_TOUCH_EDIT_CELL, pan, pinchOf, pinchStep, zoomAt, type Pinch, type Viewport } from '../../lib/viewport';
+import { defaultWorkName } from '../../lib/works';
 
-// Picked photo → optional crop → settings → worker generation → pattern on the canvas (1b-2),
-// then touch editing: tools, undo / redo, pinch zoom, usage and color sheets (1b-3).
-// Saving works / export (1b-4) come later on this same page.
+// Picked photo (?src=) or a saved work (?work=) → optional crop → settings → worker generation →
+// pattern on the canvas (1b-2); touch editing: tools, undo / redo, pinch zoom, usage and color
+// panels (1b-3); auto-saved to 「我的作品」 and exported to the photo album (1b-4).
 
 type Tool = 'move' | 'pen' | 'eraser' | 'picker' | 'fill' | 'replace';
 const TOOLS: { id: Tool; label: string }[] = [
@@ -34,7 +37,7 @@ const TOOLS: { id: Tool; label: string }[] = [
 ];
 
 const instance = getCurrentInstance();
-const generator = new Generator(createMpWorker);
+const generator = sharedGenerator();
 
 const src = ref('');
 const settings = ref<Settings>(loadLastSettings());
@@ -50,7 +53,7 @@ const viewMode = ref<'pattern' | 'source'>('pattern');
 const tool = ref<Tool>('move');
 const currentColor = ref<number | null>(null);
 const highlight = ref<number | null>(null);
-const sheet = ref<'usage' | 'color' | null>(null);
+const sheet = ref<'usage' | 'color' | 'export' | null>(null);
 /** Crop box in preview-image pixels; null = whole image. */
 const crop = ref<Rect | null>(null);
 const cropping = ref(false);
@@ -65,7 +68,14 @@ let decoded: RgbaImage | null = null;
 let cropBefore: Rect | null = null;
 let vp: Viewport = { cell: 10, ox: 0, oy: 0 };
 let unsubscribe: (() => void) | null = null;
-const workId = `w${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+/** Id of the work in 「我的作品」 (assigned on the first generation, or from ?work=). */
+let workId = '';
+/** Crop the current pattern was generated with (saved with the work). */
+let appliedCrop: Rect | null = null;
+/** The source photo is already in the works folder (no need to copy it on every save). */
+let sourceStored = false;
+/** A saved work opened via ?work=, attached once the canvas exists. */
+let pendingDoc: PatternDoc | null = null;
 
 const imageSize = (): Size => ({ w: preview?.width ?? 1, h: preview?.height ?? 1 });
 const currentKey = () => JSON.stringify({ s: normalizeSettings(settings.value), c: crop.value });
@@ -85,29 +95,133 @@ const current = computed<PaletteEntry | null>(() => {
 });
 
 onLoad((query) => {
-  const raw = String((query as Record<string, string> | undefined)?.src ?? '');
-  try {
-    src.value = decodeURIComponent(raw);
-  } catch {
-    src.value = raw;
+  const q = (query ?? {}) as Record<string, string>;
+  const decode = (raw: string) => {
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  };
+  if (q.work) {
+    openWork(decode(q.work));
+    return;
   }
+  src.value = decode(String(q.src ?? ''));
 });
 
 onReady(async () => {
   try {
     board = await queryCanvas(instance?.proxy, '#board');
-    if (!src.value) throw new Error('没有收到图片，请返回首页重新选择');
+  } catch (e) {
+    error.value = messageOf(e);
+    return;
+  }
+  if (pendingDoc) {
+    const d = pendingDoc;
+    pendingDoc = null;
+    const wasEdited = d.settings.edited === true;
+    attach(d);
+    edited.value = wasEdited;
+    draw();
+  }
+  if (!src.value) {
+    if (!doc.value && !error.value) error.value = '没有收到图片，请返回首页重新选择';
+    return;
+  }
+  try {
     preview = await loadCanvasImage(board.canvas, src.value);
     draw();
   } catch (e) {
-    error.value = messageOf(e);
+    if (doc.value) {
+      // an old work whose photo file is gone: the pattern can still be edited and exported
+      src.value = '';
+      error.value = '原图已找不到，只能编辑和导出图纸，不能重新生成或裁剪。';
+    } else {
+      error.value = messageOf(e);
+    }
   }
 });
 
+onHide(() => {
+  if (dirty) void saveNow();
+});
+
 onUnload(() => {
-  generator.dispose();
+  if (dirty) void saveNow();
+  // the worker is shared by all pages: only stop the job this page is waiting for
+  if (generating.value) generator.cancel();
   unsubscribe?.();
 });
+
+/** Open a saved work: its pattern, the photo kept with it, its crop and settings. */
+function openWork(id: string): void {
+  let loaded: ReturnType<ReturnType<typeof worksStore>['load']>;
+  try {
+    loaded = worksStore().load(id);
+  } catch (e) {
+    error.value = messageOf(e);
+    return;
+  }
+  if (!loaded) {
+    error.value = '这个作品已经不存在了';
+    return;
+  }
+  const { file, doc: d } = loaded;
+  workId = file.id;
+  src.value = file.source ?? '';
+  sourceStored = true;
+  crop.value = file.crop;
+  appliedCrop = file.crop;
+  const meta = d.settings as { settings?: Partial<Settings> };
+  if (meta.settings && typeof meta.settings === 'object') settings.value = normalizeSettings(meta.settings);
+  appliedKey.value = JSON.stringify({ s: normalizeSettings(settings.value), c: file.crop });
+  pendingDoc = d;
+  uni.setNavigationBarTitle({ title: d.name });
+}
+
+// --- saving to 「我的作品」 --------------------------------------------------------------------
+
+let dirty = false;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let saving: Promise<void> = Promise.resolve();
+
+function scheduleSave(delay = 1500): void {
+  dirty = true;
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void saveNow();
+  }, delay);
+}
+
+/** Save the current pattern (with a fresh thumbnail); saves run one after another. */
+function saveNow(): Promise<void> {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  const d = doc.value;
+  if (!d) return saving;
+  dirty = false;
+  saving = saving.then(async () => {
+    try {
+      if (edited.value) d.settings.edited = true;
+      let thumb: string | null = null;
+      try {
+        thumb = await renderThumb(d);
+      } catch {
+        // the works list then shows no thumbnail; the work itself is still saved
+      }
+      worksStore().save(d, { source: sourceStored ? undefined : src.value || null, crop: appliedCrop, thumb });
+      sourceStored = sourceStored || !!src.value;
+    } catch {
+      dirty = true;
+      toast('保存作品失败（可能是手机存储空间不足）');
+    }
+  });
+  return saving;
+}
 
 watch([viewMode, cropping, highlight], () => requestDraw());
 
@@ -403,6 +517,7 @@ function attach(next: PatternDoc): void {
     version.value++;
     edited.value = true;
     requestDraw();
+    scheduleSave();
   });
   doc.value = next;
   editor.value = ed;
@@ -413,6 +528,7 @@ function attach(next: PatternDoc): void {
   version.value++;
   // regenerating at the same size keeps the view; a new size is re-fitted
   if (!sameSize && board) vp = fitViewport(next.cols, next.rows, board.width, board.height);
+  uni.setNavigationBarTitle({ title: next.name });
 }
 
 function undo(): void {
@@ -427,7 +543,7 @@ function mirror(): void {
   if (editor.value?.mirrorHorizontal()) toast('已左右翻转（可撤销）');
 }
 
-function toggleSheet(which: 'usage' | 'color'): void {
+function toggleSheet(which: 'usage' | 'color' | 'export'): void {
   sheet.value = sheet.value === which ? null : which;
 }
 
@@ -447,17 +563,33 @@ function useColor(index: number): void {
 
 // --- generation ---------------------------------------------------------------------------
 
-function confirmOverwrite(): Promise<boolean> {
-  if (!edited.value) return Promise.resolve(true);
+function ask(title: string, content: string, confirmText: string): Promise<boolean> {
   return new Promise((resolve) => {
-    uni.showModal({
-      title: '重新生成会覆盖手工修改',
-      content: '当前图纸上的手工修改会被新生成的图纸替换。确定重新生成吗？',
-      confirmText: '重新生成',
-      success: (r) => resolve(!!r.confirm),
-      fail: () => resolve(false),
-    });
+    uni.showModal({ title, content, confirmText, success: (r) => resolve(!!r.confirm), fail: () => resolve(false) });
   });
+}
+
+/** Before replacing a hand-edited pattern: ask, then keep a copy in 「我的作品」. False = do not regenerate. */
+async function confirmOverwrite(): Promise<boolean> {
+  const d = doc.value;
+  if (!edited.value || !d) return true;
+  const ok = await ask('重新生成会覆盖手工修改', '当前修改会先另存一份到「我的作品」（名称后加「修改前」），然后再重新生成。', '备份并生成');
+  if (!ok) return false;
+  try {
+    await saveNow();
+    const file = worksStore().load(d.id)?.file;
+    let thumb: string | null = null;
+    try {
+      thumb = await renderThumb(d);
+    } catch {
+      // backup without a thumbnail
+    }
+    worksStore().saveCopy(d, `${d.name}（修改前）`, { source: file?.source ?? null, crop: file?.crop ?? null, thumb });
+    return true;
+  } catch {
+    error.value = '备份失败（可能是手机存储空间不足），已取消重新生成。请先导出图纸保存。';
+    return false;
+  }
 }
 
 async function generate(): Promise<void> {
@@ -480,10 +612,16 @@ async function generate(): Promise<void> {
           : '图片是全透明的，没有可以转换的内容。';
       return;
     }
-    attach(docFromPattern(result, { id: workId, name: '新图纸', brand: s.brand, tier: String(s.tier), settings: { kind: 'image', settings: s, crop: usedCrop } }));
+    const prev = doc.value;
+    if (!workId) workId = worksStore().newId();
+    const next = docFromPattern(result, { id: workId, name: prev?.name || defaultWorkName(), brand: s.brand, tier: String(s.tier), settings: { kind: 'image', settings: s, crop: usedCrop } });
+    if (prev) next.createdAt = prev.createdAt;
+    attach(next);
     appliedKey.value = JSON.stringify({ s, c: usedCrop });
+    appliedCrop = usedCrop;
     viewMode.value = 'pattern';
     draw();
+    await saveNow();
   } catch (e) {
     if (!(e instanceof CancelledError)) error.value = `生成失败：${messageOf(e)}`;
   } finally {
@@ -555,8 +693,11 @@ function messageOf(e: unknown): string {
         </view>
         <view v-if="highlight !== null" class="hl" @tap="highlight = null">取消高亮</view>
         <button size="mini" class="act-usage" @tap="toggleSheet('usage')">{{ sheet === 'usage' ? '收起用量' : '用量' }}</button>
+        <button size="mini" class="act-export" @tap="toggleSheet('export')">导出</button>
       </view>
     </view>
+
+    <ExportCard v-if="sheet === 'export' && doc && showingPattern" :doc="doc" :version="version" @close="sheet = null" />
 
     <UsageSheet
       v-if="sheet === 'usage' && doc && showingPattern"

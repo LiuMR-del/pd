@@ -52,9 +52,29 @@ interface MpCanvas {
   createImage(): MpImage;
   /** Only on-screen canvas nodes have it (offscreen canvases do not). */
   requestAnimationFrame?(callback: () => void): number;
+  /** Offscreen canvases have it (checked in DevTools, base library 3.17.6). */
+  toDataURL?(type?: string): string;
+}
+
+interface MpCallback<T> {
+  success?: (res: T) => void;
+  fail?: (err: { errMsg: string }) => void;
+}
+
+/** Synchronous file API (wx.getFileSystemManager()); the methods throw on failure. */
+interface MpFileSystemManager {
+  readFileSync(path: string, encoding: 'utf8'): string;
+  writeFileSync(path: string, data: string, encoding: 'utf8' | 'base64'): void;
+  copyFileSync(src: string, dest: string): void;
+  unlinkSync(path: string): void;
+  accessSync(path: string): void;
+  mkdirSync(path: string, recursive?: boolean): void;
 }
 
 declare const wx: {
+  env: { USER_DATA_PATH: string };
   createOffscreenCanvas(options: { type: '2d'; width: number; height: number }): MpCanvas;
   getWindowInfo(): { pixelRatio: number; windowWidth: number; windowHeight: number };
+  getFileSystemManager(): MpFileSystemManager;
+  canvasToTempFilePath(options: { canvas: MpCanvas; fileType?: 'png' | 'jpg'; quality?: number } & MpCallback<{ tempFilePath: string }>): void;
 };
