@@ -20,6 +20,8 @@
     "dev:server": "pnpm --filter @pd/server dev",
     "build:server": "pnpm --filter @pd/server build",
     "dev:admin": "pnpm --filter @pd/admin dev",
-    "build:admin": "pnpm --filter @pd/admin build"
+    "build:admin": "pnpm --filter @pd/admin build",
+    "dev:miniapp": "pnpm --filter @pd/miniapp dev",
+    "build:miniapp": "pnpm --filter @pd/miniapp build"
   }
 }

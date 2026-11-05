@@ -7,3 +7,6 @@ allowBuilds:
   # Prisma CLI (stage 2 server): postinstall downloads the schema engine used by migrations
   '@prisma/engines': true
   prisma: true
+  # uni-app (stage 1b mini-program) toolchain: these postinstall scripts only print a funding banner
+  core-js: false
+  core-js-pure: false

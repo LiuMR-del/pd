@@ -1,0 +1,37 @@
+{
+  "name": "@pd/miniapp",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "WeChat mini-program (stage 1b): uni-app Vue 3, compiled for mp-weixin only. Algorithm, editing, rendering and makers come from the shared packages.",
+  "scripts": {
+    "dev": "pnpm build:worker && uni -p mp-weixin",
+    "build": "pnpm build:worker && uni build -p mp-weixin",
+    "build:worker": "tsx scripts/build-worker.ts",
+    "test": "vitest run",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@dcloudio/uni-app": "3.0.0-5030420261029002",
+    "@dcloudio/uni-components": "3.0.0-5030420261029002",
+    "@dcloudio/uni-mp-weixin": "3.0.0-5030420261029002",
+    "@pd/editor-core": "workspace:*",
+    "@pd/makers": "workspace:*",
+    "@pd/palettes": "workspace:*",
+    "@pd/pattern-core": "workspace:*",
+    "@pd/render": "workspace:*",
+    "vue": "3.4.21"
+  },
+  "devDependencies": {
+    "@dcloudio/types": "3.4.31",
+    "@dcloudio/uni-cli-shared": "3.0.0-5030420261029002",
+    "@dcloudio/vite-plugin-uni": "3.0.0-5030420261029002",
+    "@types/node": "^24.0.0",
+    "esbuild": "0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "5.9.3",
+    "vite": "5.2.8",
+    "vitest": "3.2.7",
+    "vue-tsc": "3.3.13"
+  }
+}

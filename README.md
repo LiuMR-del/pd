@@ -50,6 +50,15 @@ Windows 不用 Docker：`tools\env\mysql.cmd start` / `stop` / `status` 启停�
 
 `pnpm -r test` 会跑后端的接口测试，需要 MySQL 已启动（测试写入 `pd_test` 库，不清库）。改表结构用 `pnpm --filter @pd/server db:migrate`。
 
+### 微信小程序（阶段 1b，开发中）
+
+```bash
+pnpm dev:miniapp      # 监听编译到 apps/miniapp/dist/dev/mp-weixin，用微信开发者工具导入这个目录
+pnpm build:miniapp    # 发布用编译，输出 apps/miniapp/dist/build/mp-weixin
+```
+
+开发期用游客 AppID（`touristappid`）；Worker 由 `apps/miniapp/scripts/build-worker.ts` 单独打包，上面两个命令会自动先打包。
+
 Mac 和 Windows 两台电脑都会改代码，换电脑时的步骤和 Windows 开工脚本见 `docs/双机开发.md`。
 
 ## 来源与许可证
