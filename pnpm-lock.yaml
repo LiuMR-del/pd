@@ -358,6 +358,9 @@ importers:
 
   packages/app-shared:
     dependencies:
+      '@pd/editor-core':
+        specifier: workspace:*
+        version: link:../editor-core
       '@pd/makers':
         specifier: workspace:*
         version: link:../makers
