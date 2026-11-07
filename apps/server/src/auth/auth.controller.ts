@@ -9,9 +9,9 @@ export const USERNAME_RE = /^[A-Za-z0-9_]{3,32}$/;
 const username = z.string().regex(USERNAME_RE, '用户名为 3~32 位字母、数字或下划线');
 export const passwordSchema = z.string().min(8, '密码至少 8 位').max(72, '密码最多 72 位');
 const credentials = z.object({ username, password: z.string().min(1, '请输入密码').max(72) });
-const registerBody = z.object({ username, password: passwordSchema });
+export const registerBody = z.object({ username, password: passwordSchema });
 const refreshBody = z.object({ refreshToken: z.string().min(10).max(200) });
-const wxBody = z.object({ code: z.string().min(1).max(200) });
+export const wxBody = z.object({ code: z.string().min(1).max(200) });
 
 const MIN = 60_000;
 const ua = (req: Request) => String(req.headers['user-agent'] ?? '');

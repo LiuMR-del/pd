@@ -1,3 +1,4 @@
+import { docToDraft, EMPTY_CELL, type PatternDoc } from '@pd/editor-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuthService } from '../src/auth/auth.service';
 import { registerUser, startServer, uniqueName, type TestServer } from './helpers';
@@ -153,5 +154,75 @@ describe('wechat login', () => {
     const r = await s.call('POST', '/auth/wx-login', { body: { code: 'bad' } });
     expect(r.status).toBe(401);
     expect(r.body.error.code).toBe('wx_code_invalid');
+  });
+});
+
+describe('wechat binding (mini-program ↔ web account)', () => {
+  // the fake code2Session gives openid `openid-<code>`: the same code means the same WeChat user
+  const work = (id: string) => {
+    const now = Date.now();
+    const doc: PatternDoc = {
+      id, name: '小猫', createdAt: now, updatedAt: now, cols: 2, rows: 1, brand: 'MARD', tier: 'all', settings: {},
+      cells: Uint16Array.of(0, EMPTY_CELL), palette: [{ key: 'A1', hex: '#FFFFFF' }],
+    };
+    return { baseRevision: null, draft: docToDraft(doc) };
+  };
+
+  it('binds a WeChat to a web account; one-tap login then opens that account', async () => {
+    const u = await registerUser(s);
+    const code = uniqueName('bind');
+    const r = await s.call('POST', '/me/wx-bind', { token: u.token, body: { code } });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ hasWechat: true, hasPassword: true, username: u.username.toLowerCase() });
+    const login = await s.call('POST', '/auth/wx-login', { body: { code } });
+    expect(login.body.created).toBe(false);
+    expect(login.body.user.id).toBe(r.body.id);
+    // binding the same WeChat again is a no-op
+    expect((await s.call('POST', '/me/wx-bind', { token: u.token, body: { code } })).status).toBe(200);
+    // another WeChat cannot replace it
+    const other = await s.call('POST', '/me/wx-bind', { token: u.token, body: { code: uniqueName('bind') } });
+    expect(other.body.error.code).toBe('wx_already_bound');
+  });
+
+  it('takes the WeChat over from an empty WeChat-only account, which is deleted', async () => {
+    const code = uniqueName('bind');
+    const wxOnly = await s.call('POST', '/auth/wx-login', { body: { code } });
+    const u = await registerUser(s);
+    const r = await s.call('POST', '/me/wx-bind', { token: u.token, body: { code } });
+    expect(r.status).toBe(200);
+    expect((await s.call('GET', '/me', { token: wxOnly.body.tokens.accessToken })).status).toBe(404);
+    expect((await s.call('POST', '/auth/wx-login', { body: { code } })).body.user.id).toBe(r.body.id);
+  });
+
+  it('refuses when that WeChat already has an account with works (no silent merge)', async () => {
+    const code = uniqueName('bind');
+    const wxOnly = await s.call('POST', '/auth/wx-login', { body: { code } });
+    const id = uniqueName('w');
+    expect((await s.call('PUT', `/works/${id}`, { token: wxOnly.body.tokens.accessToken, body: work(id) })).status).toBe(200);
+    const u = await registerUser(s);
+    const r = await s.call('POST', '/me/wx-bind', { token: u.token, body: { code } });
+    expect(r.status).toBe(409);
+    expect(r.body.error.code).toBe('wx_in_use');
+    expect((await s.call('GET', '/me', { token: wxOnly.body.tokens.accessToken })).status).toBe(200);
+  });
+
+  it('gives a WeChat-only account a username and password for the web app, once', async () => {
+    const wx = await s.call('POST', '/auth/wx-login', { body: { code: uniqueName('cred') } });
+    const token = wx.body.tokens.accessToken;
+    const name = uniqueName('Web');
+    const r = await s.call('PUT', '/me/credentials', { token, body: { username: name, password: 'password123' } });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ username: name.toLowerCase(), hasPassword: true, hasWechat: true });
+    const login = await s.call('POST', '/auth/login', { body: { username: name, password: 'password123' } });
+    expect(login.body.user.id).toBe(wx.body.user.id);
+    expect((await s.call('PUT', '/me/credentials', { token, body: { username: uniqueName('x'), password: 'password123' } })).body.error.code).toBe('credentials_exist');
+  });
+
+  it('refuses a taken username and a short password', async () => {
+    const taken = await registerUser(s);
+    const wx = await s.call('POST', '/auth/wx-login', { body: { code: uniqueName('cred') } });
+    const token = wx.body.tokens.accessToken;
+    expect((await s.call('PUT', '/me/credentials', { token, body: { username: taken.username, password: 'password123' } })).body.error.code).toBe('username_taken');
+    expect((await s.call('PUT', '/me/credentials', { token, body: { username: uniqueName('x'), password: 'short' } })).status).toBe(400);
   });
 });

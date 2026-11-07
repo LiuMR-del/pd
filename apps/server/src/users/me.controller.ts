@@ -1,9 +1,9 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Patch, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Inject, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { z } from 'zod';
 import { notFound, parse } from '../common/http';
 import { RateLimiter } from '../common/rate-limit';
-import { passwordSchema } from '../auth/auth.controller';
+import { passwordSchema, registerBody, wxBody } from '../auth/auth.controller';
 import { AuthService, publicUser } from '../auth/auth.service';
 import { UserGuard, UserId } from '../auth/guard';
 import { PrismaService } from '../prisma.service';
@@ -41,6 +41,24 @@ export class MeController {
     this.limiter.hit(`password:${userId}`, 10, 10 * 60_000);
     const b = parse(passwordBody, body);
     return this.auth.changePassword(userId, b.oldPassword, b.newPassword, String(req.headers['user-agent'] ?? ''));
+  }
+
+  /** Bind the WeChat of a mini-program `wx.login()` code to this account (one-tap login from then on). */
+  @Post('wx-bind')
+  @HttpCode(200)
+  async wxBind(@UserId() userId: string, @Body() body: unknown) {
+    this.limiter.hit(`wx-bind:${userId}`, 10, 10 * 60_000);
+    const r = await this.auth.wxBind(userId, parse(wxBody, body).code);
+    if (r.removedUserId) await this.files.removeUser(r.removedUserId);
+    return r.user;
+  }
+
+  /** Username + password for an account made by WeChat login, so it can sign in on the web app. */
+  @Put('credentials')
+  async credentials(@UserId() userId: string, @Body() body: unknown) {
+    this.limiter.hit(`credentials:${userId}`, 10, 10 * 60_000);
+    const b = parse(registerBody, body);
+    return this.auth.setCredentials(userId, b.username, b.password);
   }
 
   /** Deletes the account and everything that belongs to it (works, history, files, sessions). */

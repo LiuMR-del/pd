@@ -118,6 +118,50 @@ export class AuthService {
     return this.issue(userId, userAgent);
   }
 
+  /**
+   * Binds the WeChat of a `wx.login()` code to the signed-in account, so the mini-program's one-tap
+   * login opens this account from now on. An empty WeChat-only account already holding that WeChat
+   * (made by an earlier one-tap login, no works, no password) is deleted; any other holder is refused
+   * rather than merged. Returns the updated user and the id of a deleted account (its files go too).
+   */
+  async wxBind(userId: string, code: string): Promise<{ user: PublicUser; removedUserId: string | null }> {
+    const me = await this.db.user.findUnique({ where: { id: userId } });
+    if (!me) throw unauthorized('账号不存在', 'user_not_found');
+    const s = await this.wechat.code2Session(code);
+    if (me.wxOpenId === s.openid) return { user: publicUser(me), removedUserId: null };
+    if (me.wxOpenId) throw conflict('这个账号已经绑定了另一个微信', 'wx_already_bound');
+    const holder = await this.db.user.findUnique({ where: { wxOpenId: s.openid }, include: { _count: { select: { works: true } } } });
+    if (holder && (holder.passwordHash || holder._count.works > 0))
+      throw conflict('这个微信已经在用另一个账号（里面有作品或设置了密码），不能再绑定。可以先用微信登录那个账号处理', 'wx_in_use');
+    const user = await this.db
+      .$transaction(async (tx) => {
+        if (holder) await tx.user.delete({ where: { id: holder.id } });
+        return tx.user.update({ where: { id: userId }, data: { wxOpenId: s.openid, wxUnionId: s.unionid ?? null } });
+      })
+      .catch((e: unknown) => {
+        // the same WeChat bound to another account at the same moment
+        if ((e as { code?: string }).code === 'P2002') throw conflict('这个微信已经绑定了别的账号', 'wx_in_use');
+        throw e;
+      });
+    return { user: publicUser(user), removedUserId: holder?.id ?? null };
+  }
+
+  /** Gives an account without a password (WeChat-only) a username and password for the web app. */
+  async setCredentials(userId: string, username: string, password: string): Promise<PublicUser> {
+    const me = await this.db.user.findUnique({ where: { id: userId } });
+    if (!me) throw unauthorized('账号不存在', 'user_not_found');
+    if (me.passwordHash || me.username) throw conflict('这个账号已经有用户名和密码了，可以用「修改密码」', 'credentials_exist');
+    const name = username.toLowerCase();
+    if (await this.db.user.findUnique({ where: { username: name } })) throw conflict('这个用户名已被使用', 'username_taken');
+    const user = await this.db.user
+      .update({ where: { id: userId }, data: { username: name, passwordHash: await hashPassword(password) } })
+      .catch((e: unknown) => {
+        if ((e as { code?: string }).code === 'P2002') throw conflict('这个用户名已被使用', 'username_taken');
+        throw e;
+      });
+    return publicUser(user);
+  }
+
   async checkPassword(userId: string, password: string): Promise<void> {
     const user = await this.db.user.findUnique({ where: { id: userId } });
     if (!user) throw unauthorized();
