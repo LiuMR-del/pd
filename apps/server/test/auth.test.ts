@@ -115,6 +115,8 @@ describe('profile', () => {
     const r = await s.call('PATCH', '/me', { token: u.token, body: { nickname: ' 小豆 ' } });
     expect(r.body.nickname).toBe('小豆');
     expect((await s.call('PATCH', '/me', { token: u.token, body: { nickname: '' } })).status).toBe(400);
+    // PUT works too (wx.request has no PATCH)
+    expect((await s.call('PUT', '/me', { token: u.token, body: { nickname: '大豆' } })).body.nickname).toBe('大豆');
   });
 
   it('changes the password and signs out other sessions', async () => {

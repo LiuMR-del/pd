@@ -36,6 +36,12 @@ export class MeController {
     return publicUser(await this.db.user.update({ where: { id: userId }, data: b }));
   }
 
+  /** Same as PATCH: the mini-program's wx.request has no PATCH method. */
+  @Put()
+  async put(@UserId() userId: string, @Body() body: unknown) {
+    return this.patch(userId, body);
+  }
+
   @Put('password')
   async password(@UserId() userId: string, @Body() body: unknown, @Req() req: Request) {
     this.limiter.hit(`password:${userId}`, 10, 10 * 60_000);

@@ -1,21 +1,35 @@
 <script setup lang="ts">
-import { onShow } from '@dcloudio/uni-app';
+import { onShow, onUnload } from '@dcloudio/uni-app';
 import { ref } from 'vue';
+import { account, engine, onCloudChange, workDeleted } from '../../lib/cloud';
 import { worksStore } from '../../lib/mp-files';
 import type { WorkSummary } from '../../lib/works';
 
-// 「我的作品」: works saved on this phone, newest first. Tap to keep editing; 「…」 to rename / delete.
+// 「我的作品」: works on this phone (signed in: also the account's, synced), newest first. Tap to keep
+// editing; 「…」 to rename / delete.
 const works = ref<WorkSummary[]>([]);
 
 function refresh() {
   try {
-    works.value = worksStore().list();
+    works.value = worksStore().visible();
   } catch {
     works.value = [];
   }
 }
 
-onShow(refresh);
+onShow(() => {
+  refresh();
+  engine.schedule(0);
+});
+onUnload(onCloudChange(refresh));
+
+/** Sync badge of a work (signed in only). */
+function badge(w: WorkSummary): string {
+  if (!account.user) return '';
+  if (!w.owner) return '仅在手机上';
+  if (w.dirty || !w.inCloud) return account.status === 'offline' ? '待同步（离线）' : '待同步';
+  return '已同步';
+}
 
 function open(w: WorkSummary) {
   uni.navigateTo({ url: `/pages/editor/editor?work=${encodeURIComponent(w.id)}` });
@@ -49,6 +63,7 @@ function rename(w: WorkSummary) {
       try {
         worksStore().rename(w.id, name);
         refresh();
+        engine.schedule(500);
       } catch {
         uni.showToast({ title: '重命名失败', icon: 'none' });
       }
@@ -59,12 +74,13 @@ function rename(w: WorkSummary) {
 function remove(w: WorkSummary) {
   uni.showModal({
     title: '删除作品',
-    content: `删除「${w.name}」？删除后不能恢复。`,
+    content: w.owner && account.user ? `删除「${w.name}」？云端和其他设备上的也会一起删除，不能恢复。` : `删除「${w.name}」？删除后不能恢复。`,
     confirmText: '删除',
     confirmColor: '#b42318',
     success: (r) => {
       if (!r.confirm) return;
-      worksStore().remove(w.id);
+      const was = worksStore().remove(w.id);
+      workDeleted(was.owner, w.id, was.revision);
       refresh();
       uni.showToast({ title: '已删除', icon: 'none' });
     },
@@ -84,7 +100,7 @@ function remove(w: WorkSummary) {
       <view class="info">
         <view class="name">{{ w.name }}</view>
         <view class="muted">{{ w.cols }}×{{ w.rows }} 格 · {{ w.colors }} 色 · {{ w.beads }} 颗</view>
-        <view class="muted">{{ when(w.updatedAt) }}</view>
+        <view class="muted">{{ when(w.updatedAt) }}<text v-if="badge(w)" class="badge" :class="{ pending: badge(w) !== '已同步' }"> · {{ badge(w) }}</text></view>
       </view>
       <view class="more" @tap.stop="more(w)">···</view>
     </view>
@@ -129,6 +145,12 @@ function remove(w: WorkSummary) {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.badge {
+  color: #0f766e;
+}
+.badge.pending {
+  color: #b54708;
 }
 .more {
   padding: 16rpx;

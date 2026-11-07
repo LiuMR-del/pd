@@ -31,6 +31,7 @@ import { CancelledError } from '../../lib/generator';
 import { decodeImage, loadCanvasImage } from '../../lib/image';
 import { loadLastSettings, saveLastSettings } from '../../lib/last-settings';
 import { queryCanvas, touchPoint, type CanvasHandle } from '../../lib/mp-canvas';
+import { registerEditor, workSaved } from '../../lib/cloud';
 import { renderThumb, worksStore } from '../../lib/mp-files';
 import { mpTextRasterizer } from '../../lib/mp-raster';
 import { sharedGenerator } from '../../lib/mp-worker';
@@ -92,6 +93,8 @@ let vp: Viewport = { cell: 10, ox: 0, oy: 0 };
 let unsubscribe: (() => void) | null = null;
 /** Id of the work in 「我的作品」 (assigned on the first generation, or from ?work=). */
 let workId = '';
+/** Cloud revision this page's pattern is based on (null: not uploaded yet); see SaveOptions.baseRevision. */
+let baseRevision: number | null = null;
 /** Crop the current pattern was generated with (saved with the work). */
 let appliedCrop: Rect | null = null;
 /** The source photo is already in the works folder (no need to copy it on every save). */
@@ -190,6 +193,7 @@ onHide(() => {
 onUnload(() => {
   if (makeTimer) clearTimeout(makeTimer);
   if (dirty) void saveNow();
+  unregisterEditor();
   // the worker is shared by all pages: only stop the job this page is waiting for
   if (generating.value) generator.cancel();
   unsubscribe?.();
@@ -210,6 +214,7 @@ function openWork(id: string): void {
   }
   const { file, doc: d } = loaded;
   workId = file.id;
+  baseRevision = file.cloud?.revision ?? null;
   // same draft meta as the web app: { kind, settings, crop } / { kind, settings, text } / { kind, settings, qr }
   const meta = d.settings as { kind?: string; settings?: Partial<Settings>; text?: Partial<TextSettings>; qr?: Partial<QrSettings> };
   kind.value = meta.kind === 'text' || meta.kind === 'qr' ? meta.kind : 'image';
@@ -257,8 +262,14 @@ function saveNow(): Promise<void> {
   dirty = false;
   try {
     if (edited.value) d.settings.edited = true;
-    worksStore().save(d, { source: sourceStored ? undefined : src.value || null, crop: appliedCrop });
+    const saved = worksStore().save(d, { source: sourceStored ? undefined : src.value || null, crop: appliedCrop, baseRevision });
     sourceStored = sourceStored || !!src.value;
+    if (saved.id !== d.id) {
+      // a newer version came from the cloud meanwhile: these edits went to a copy; keep editing the copy
+      retarget(saved.id, saved.name);
+      toast(`这个作品在别处也改过，你的修改另存为「${saved.name}」`);
+    }
+    workSaved();
   } catch {
     dirty = true;
     toast('保存作品失败（可能是手机存储空间不足）');
@@ -273,6 +284,57 @@ function saveNow(): Promise<void> {
   });
   return saving;
 }
+
+/** Keep editing the open pattern as another work (a conflict copy that already holds these edits). */
+function retarget(id: string, name: string): void {
+  const d = doc.value;
+  if (!d) return;
+  workId = id;
+  d.id = id;
+  d.name = name;
+  baseRevision = null;
+  uni.setNavigationBarTitle({ title: name });
+}
+
+// cloud sync talks to this page through these hooks (see lib/cloud.ts)
+const unregisterEditor = registerEditor({
+  flush() {
+    if (dirty) void saveNow();
+  },
+  forked(id, newId, name) {
+    if (workId === id) retarget(newId, name);
+  },
+  replaced(id) {
+    if (workId !== id || !board || generating.value) return;
+    // settings / crop / text changed here but not generated yet: keep the page as it is; its next save
+    // is based on the older revision and goes to a conflict copy, so nothing typed here is lost
+    if (dirty || stale.value || cropping.value || makeTimer) return;
+    // a newer version from another device: show it (edits made here were kept as a copy first)
+    openWork(id);
+    const d = pendingDoc;
+    pendingDoc = null;
+    if (!d) return;
+    attach(d);
+    edited.value = d.settings.edited === true;
+    decoded = null;
+    if (kind.value === 'image' && src.value)
+      void loadCanvasImage(board.canvas, src.value)
+        .then((img) => {
+          preview = img;
+        })
+        .catch(() => undefined);
+    draw();
+    toast('已载入在别处做的修改');
+  },
+  uploaded(id, revision) {
+    if (workId === id) baseRevision = revision;
+  },
+  removed(id) {
+    if (workId !== id) return;
+    workId = '';
+    uni.showModal({ title: '作品已删除', content: '这个作品已在别的设备上删除。', showCancel: false, success: () => uni.navigateBack() });
+  },
+});
 
 watch([viewMode, cropping, highlight], () => requestDraw());
 

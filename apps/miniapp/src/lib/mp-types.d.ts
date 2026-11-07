@@ -64,6 +64,8 @@ interface MpCallback<T> {
 /** Synchronous file API (wx.getFileSystemManager()); the methods throw on failure. */
 interface MpFileSystemManager {
   readFileSync(path: string, encoding: 'utf8'): string;
+  readFileSync(path: string): ArrayBuffer;
+  statSync(path: string): { size: number };
   writeFileSync(path: string, data: string, encoding: 'utf8' | 'base64'): void;
   copyFileSync(src: string, dest: string): void;
   unlinkSync(path: string): void;

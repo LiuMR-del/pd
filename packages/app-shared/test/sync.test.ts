@@ -48,6 +48,10 @@ class FakeServer {
         calls.push(`upload ${w.id}`);
         return key;
       },
+      fetchSource: async (key) => {
+        calls.push(`fetch ${key}`);
+        return this.files.get(key);
+      },
       request: async <T>(method: string, path: string, body?: unknown): Promise<T> => {
         if (this.offline) throw new SyncHttpError('连不上', 0, 'offline', true);
         calls.push(`${method} ${path}`);
@@ -96,7 +100,6 @@ class FakeStore implements SyncStore {
   /** photo file "contents" by work id */
   photos = new Map<string, string>();
   private n = 0;
-  constructor(private readonly server: FakeServer) {}
 
   /** A local edit (like the editor saving). */
   edit(id: string, name: string, paint: number, owner?: string): void {
@@ -111,11 +114,9 @@ class FakeStore implements SyncStore {
     const w = this.works.get(id);
     return w && { ...w };
   }
-  async storeRemote(uid: string, w: RemoteWork, sourceChanged: boolean) {
-    if (sourceChanged) {
-      if (w.sourceKey) this.photos.set(w.id, this.server.files.get(w.sourceKey)!);
-      else this.photos.delete(w.id);
-    }
+  async storeRemote(uid: string, w: RemoteWork, source: unknown) {
+    if (typeof source === 'string') this.photos.set(w.id, source);
+    else if (source === null) this.photos.delete(w.id);
     this.works.set(w.id, { id: w.id, name: w.name, draft: w.draft, owner: uid, cloud: { revision: w.revision, sourceKey: w.sourceKey }, dirty: false, hasSource: this.photos.has(w.id), crop: w.meta?.crop ?? null });
   }
   async fork(uid: string, id: string, name: string) {
@@ -149,7 +150,7 @@ function kv() {
 }
 
 function device(server: FakeServer, uid = 'u1') {
-  const store = new FakeStore(server);
+  const store = new FakeStore();
   const transport = server.transport(uid);
   const notes: string[] = [];
   const engine = new SyncEngine(transport, store, kv(), { notify: (m) => notes.push(m) });
@@ -300,6 +301,52 @@ describe('SyncEngine', () => {
     await a.engine.syncNow();
     expect(server.rows.get('w1')!.revision).toBe(2);
     expect(a.store.works.get('w1')!.dirty).toBe(false);
+  });
+
+  it('an edit made while the photo downloads is kept as a copy, not overwritten', async () => {
+    const server = new FakeServer();
+    const a = device(server);
+    a.store.photos.set('w1', 'cat.jpg');
+    a.store.edit('w1', '照片', 1, 'u1');
+    await a.engine.syncNow();
+    const b = device(server);
+    await b.engine.syncNow();
+    // the other device swaps the photo; this device edits during the download of the new one
+    server.files.set('f9', 'dog.jpg');
+    server.edit('w1', '照片', 2);
+    server.rows.get('w1')!.sourceKey = 'f9';
+    const realFetch = b.transport.fetchSource;
+    b.transport.fetchSource = async (key) => {
+      b.store.edit('w1', '照片', 8);
+      return realFetch(key);
+    };
+    await b.engine.syncNow();
+    expect(names(b.store)).toEqual(['照片', '照片（冲突副本）']);
+    expect(b.store.photos.get('w1')).toBe('dog.jpg');
+    const copy = [...b.store.works.values()].find((w) => w.name.endsWith('（冲突副本）'))!;
+    expect((copy.draft as unknown as { cells: string }).cells).toBe('p8');
+  });
+
+  it('a photo that cannot be fetched (not offline) does not block the sync, and the cloud keeps it', async () => {
+    const server = new FakeServer();
+    const a = device(server);
+    a.store.photos.set('w1', 'cat.jpg');
+    a.store.edit('w1', '照片', 1, 'u1');
+    a.store.edit('w2', '别的作品', 1, 'u1');
+    await a.engine.syncNow();
+    const b = device(server);
+    b.transport.fetchSource = async () => {
+      throw new SyncHttpError('文件不存在', 404, 'file_not_found');
+    };
+    b.store.edit('w3', 'b 的新作品', 1, 'u1');
+    await b.engine.syncNow();
+    expect(b.engine.status).toBe('synced');
+    expect(names(b.store)).toEqual(['b 的新作品', '别的作品', '照片']);
+    expect(server.rows.has('w3')).toBe(true);
+    // editing it on b (no local photo) must not remove the photo in the cloud
+    b.store.edit('w1', '照片', 2);
+    await b.engine.syncNow();
+    expect(server.rows.get('w1')).toMatchObject({ revision: 2, sourceKey: 'f1' });
   });
 
   it('signed out: nothing syncs', async () => {

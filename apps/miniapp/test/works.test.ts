@@ -1,4 +1,4 @@
-import { docFromPattern, EMPTY_CELL, type PatternDoc } from '@pd/editor-core';
+import { docFromPattern, docToDraft, EMPTY_CELL, type PatternDoc } from '@pd/editor-core';
 import { getPalette } from '@pd/palettes';
 import { generatePattern, presetOptions } from '@pd/pattern-core';
 import { describe, expect, it } from 'vitest';
@@ -49,9 +49,123 @@ function setup() {
   const kv = new MemKV();
   files.files.set('tmp/photo.png', 'PHOTO');
   files.files.set('tmp/thumb.png', 'THUMB');
-  const store = new WorksStore(files, kv, 'user/works', () => ++t);
-  return { files, kv, store };
+  const user = { uid: null as string | null };
+  const store = new WorksStore(files, kv, 'user/works', () => ++t, () => user.uid);
+  return { files, kv, store, user };
 }
+
+describe('WorksStore cloud fields', () => {
+  const remote = (doc: PatternDoc, revision: number, sourceKey: string | null = null) => ({
+    id: doc.id, name: doc.name, revision, updatedAt: '', deleted: false, sourceKey, draft: docToDraft(doc), meta: { crop: null },
+  });
+
+  it('new works belong to the signed-in account; signed out, other accounts are hidden', () => {
+    const { store, user } = setup();
+    store.save(makeDoc('anon', '没登录'));
+    user.uid = 'u1';
+    store.save(makeDoc('mine', '我的'));
+    expect(store.syncWork('mine')).toMatchObject({ owner: 'u1', dirty: true, cloud: null });
+    expect(store.visible().map((w) => w.id).sort()).toEqual(['anon', 'mine']);
+    user.uid = 'u2';
+    expect(store.visible().map((w) => w.id)).toEqual(['anon']);
+    user.uid = null;
+    expect(store.visible().map((w) => w.id)).toEqual(['anon']);
+    // saving keeps the owner even when someone else is signed in
+    store.save(makeDoc('mine', '我的'));
+    expect(store.syncWork('mine')!.owner).toBe('u1');
+  });
+
+  it('claim gives signed-out works to an account', () => {
+    const { store } = setup();
+    store.save(makeDoc('a'));
+    store.save(makeDoc('b'));
+    expect(store.claim('u1')).toBe(2);
+    expect(store.syncWorks().every((w) => w.owner === 'u1' && w.dirty)).toBe(true);
+    expect(store.claim('u1')).toBe(0);
+  });
+
+  it('upload bookkeeping: clean after upload, still dirty when edited meanwhile', () => {
+    const { store, user } = setup();
+    user.uid = 'u1';
+    const doc = makeDoc('w1');
+    store.save(doc);
+    const snap = store.syncWork('w1')!;
+    expect(store.uploaded('w1', snap, { revision: 1, sourceKey: null })).toBe(false);
+    expect(store.list()[0]).toMatchObject({ dirty: false, inCloud: true });
+    doc.updatedAt += 5;
+    store.save(doc);
+    const snap2 = store.syncWork('w1')!;
+    doc.updatedAt += 5;
+    store.save(doc, { baseRevision: 1 });
+    expect(store.uploaded('w1', snap2, { revision: 2, sourceKey: null })).toBe(true);
+    expect(store.syncWork('w1')).toMatchObject({ dirty: true, cloud: { revision: 2 } });
+    expect(store.revisionOf('w1')).toBe(2);
+  });
+
+  it('stores downloaded versions (photo replaced or kept) as clean', () => {
+    const { files, store } = setup();
+    files.files.set('tmp/dl.jpg', 'REMOTE');
+    const doc = makeDoc('w1', '云端');
+    store.storeRemote('u1', remote(doc, 3, 'k1'), 'tmp/dl.jpg');
+    expect(store.syncWork('w1')).toMatchObject({ owner: 'u1', dirty: false, cloud: { revision: 3, sourceKey: 'k1' }, hasSource: true, name: '云端' });
+    expect(files.files.get(store.sourceOf('w1')!)).toBe('REMOTE');
+    store.storeRemote('u1', remote(doc, 4, 'k1'), undefined);
+    expect(files.files.get(store.sourceOf('w1')!)).toBe('REMOTE');
+    store.storeRemote('u1', remote(doc, 5, null), null);
+    expect(store.sourceOf('w1')).toBeNull();
+    expect(store.load('w1')!.doc.cols).toBe(doc.cols);
+  });
+
+  it('a save based on an older revision goes to a 「（冲突副本）」 instead of overwriting', () => {
+    const { store, user } = setup();
+    user.uid = 'u1';
+    const doc = makeDoc('w1', '小猫');
+    store.save(doc, { source: 'tmp/photo.png' });
+    store.uploaded('w1', store.syncWork('w1')!, { revision: 1, sourceKey: 'k' });
+    store.storeRemote('u1', remote(makeDoc('w1', '小猫'), 2, 'k'), undefined);
+    // the editor opened revision 1 and saves its edits
+    const saved = store.save(doc, { baseRevision: 1 });
+    expect(saved.id).not.toBe('w1');
+    expect(saved.name).toBe('小猫（冲突副本）');
+    expect(store.syncWork(saved.id)).toMatchObject({ owner: 'u1', dirty: true, cloud: null, hasSource: true });
+    expect(store.revisionOf('w1')).toBe(2);
+  });
+
+  it('fork copies the work, its photo and thumbnail as a new, not uploaded work', () => {
+    const { files, store, user } = setup();
+    user.uid = 'u1';
+    store.save(makeDoc('w1', '原来'), { source: 'tmp/photo.png', thumb: 'tmp/thumb.png' });
+    store.uploaded('w1', store.syncWork('w1')!, { revision: 1, sourceKey: 'k' });
+    const nid = store.fork('u1', 'w1', '原来（冲突副本）');
+    expect(store.syncWork(nid)).toMatchObject({ name: '原来（冲突副本）', cloud: null, dirty: true, hasSource: true });
+    expect(store.load(nid)!.doc.id).toBe(nid);
+    expect(files.files.get(store.list().find((w) => w.id === nid)!.thumb!)).toBe('THUMB');
+  });
+
+  it('copies (conflict, backup) keep the owner of the original, also when signed out meanwhile', () => {
+    const { store, user } = setup();
+    user.uid = 'u1';
+    const doc = makeDoc('w1', '小猫');
+    store.save(doc);
+    store.uploaded('w1', store.syncWork('w1')!, { revision: 1, sourceKey: null });
+    user.uid = null;
+    expect(store.saveCopy(doc, '小猫（修改前）').owner).toBe('u1');
+    store.storeRemote('u1', remote(makeDoc('w1', '小猫'), 2), undefined);
+    const conflict = store.save(doc, { baseRevision: 1 });
+    expect(conflict.name).toBe('小猫（冲突副本）');
+    expect(store.syncWork(conflict.id)!.owner).toBe('u1');
+    expect(store.claim('u2')).toBe(0);
+  });
+
+  it('remove reports the cloud revision for deleting it there', () => {
+    const { store, user } = setup();
+    user.uid = 'u1';
+    store.save(makeDoc('w1'));
+    store.uploaded('w1', store.syncWork('w1')!, { revision: 4, sourceKey: null });
+    expect(store.remove('w1')).toEqual({ owner: 'u1', revision: 4 });
+    expect(store.remove('w1')).toEqual({ owner: null, revision: null });
+  });
+});
 
 describe('WorksStore', () => {
   it('saves and loads a work with its source photo and thumbnail', () => {

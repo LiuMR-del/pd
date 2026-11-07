@@ -1,6 +1,7 @@
 import type { PatternDoc } from '@pd/editor-core';
 import { drawPattern, type Ctx2D } from '@pd/render';
 import { fitSheet } from './export-size';
+import { session } from './session';
 import { WorksStore, type FileStore, type KeyValue } from './works';
 
 // WeChat implementations of the storage interfaces, plus canvas → image file → photo album.
@@ -41,7 +42,7 @@ export const mpStorage: KeyValue = {
 let store: WorksStore | null = null;
 /** The works store in the user data folder (`wx.env.USER_DATA_PATH/works`). */
 export function worksStore(): WorksStore {
-  if (!store) store = new WorksStore(mpFiles, mpStorage, `${wx.env.USER_DATA_PATH}/works`);
+  if (!store) store = new WorksStore(mpFiles, mpStorage, `${wx.env.USER_DATA_PATH}/works`, Date.now, () => session.uid);
   return store;
 }
 

@@ -3,6 +3,7 @@ import { onUnload } from '@dcloudio/uni-app';
 import { getPalette } from '@pd/palettes';
 import { presetOptions } from '@pd/pattern-core';
 import { ref } from 'vue';
+import { account } from '../../lib/cloud';
 import { CancelledError } from '../../lib/generator';
 import { pickImage } from '../../lib/image';
 import { sharedGenerator } from '../../lib/mp-worker';
@@ -48,6 +49,10 @@ function openMaker(kind: 'text' | 'qr') {
 function openWorks() {
   uni.navigateTo({ url: '/pages/works/works' });
 }
+
+function openAccount() {
+  uni.navigateTo({ url: '/pages/account/account' });
+}
 </script>
 
 <template>
@@ -61,6 +66,8 @@ function openWorks() {
     <button class="btn btn-text" @tap="openMaker('text')">文字转图纸</button>
     <button class="btn btn-qr" @tap="openMaker('qr')">二维码转图纸</button>
     <button class="btn" @tap="openWorks">我的作品</button>
+    <button class="btn btn-account" @tap="openAccount">{{ account.user ? `我的 · ${account.user.nickname || '拼豆用户'}` : '登录 / 我的' }}</button>
+    <view v-if="!account.user" class="muted center">登录后作品自动保存到云端，网页上也能打开</view>
 
     <view class="card">
       <view class="card-title">开发自检</view>
@@ -92,6 +99,9 @@ function openWorks() {
 .card-title {
   font-weight: 600;
   margin-bottom: 8rpx;
+}
+.center {
+  text-align: center;
 }
 .report {
   margin-top: 8rpx;

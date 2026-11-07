@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { onLaunch } from '@dcloudio/uni-app';
+import { onLaunch, onShow } from '@dcloudio/uni-app';
+import { initCloud, resume } from './lib/cloud';
 
 onLaunch(() => {
-  // palettes come bundled with @pd/palettes; server-side palette sync is a stage 2 topic for the mini-program
+  // palettes come bundled with @pd/palettes (server-side palette sync is not used by the mini-program yet)
+  void initCloud();
 });
+
+// back in the foreground: pick up changes made on other devices
+onShow(() => resume());
 </script>
 
 <style>

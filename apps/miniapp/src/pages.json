@@ -2,7 +2,9 @@
   "pages": [
     { "path": "pages/index/index", "style": { "navigationBarTitleText": "拼豆图纸" } },
     { "path": "pages/editor/editor", "style": { "navigationBarTitleText": "图纸" } },
-    { "path": "pages/works/works", "style": { "navigationBarTitleText": "我的作品" } }
+    { "path": "pages/works/works", "style": { "navigationBarTitleText": "我的作品" } },
+    { "path": "pages/account/account", "style": { "navigationBarTitleText": "我的" } },
+    { "path": "pages/legal/legal", "style": { "navigationBarTitleText": "用户协议" } }
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",

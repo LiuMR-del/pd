@@ -72,16 +72,19 @@ export interface SyncTransport {
   request<T>(method: 'GET' | 'PUT' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<T>;
   /** Upload the source photo stored with this local work; returns its file key. */
   uploadSource(work: SyncWork): Promise<string>;
+  /** Download a photo; returns a platform handle (temp file path, Blob…) for SyncStore.storeRemote. */
+  fetchSource(key: string): Promise<unknown>;
 }
 
 export interface SyncStore {
   all(): Promise<SyncWork[]>;
   get(id: string): Promise<SyncWork | undefined>;
   /**
-   * Store a downloaded work as synced (owner `uid`, not dirty). When `sourceChanged`, fetch the photo
-   * of `w.sourceKey` (or drop the local one when it is null); otherwise keep the local photo.
+   * Store a downloaded work as synced (owner `uid`, not dirty). `source`: undefined = keep the local
+   * photo, null = the work has no photo any more, otherwise a handle from SyncTransport.fetchSource.
+   * Should not wait on the network (edits made meanwhile would be overwritten).
    */
-  storeRemote(uid: string, w: RemoteWork, sourceChanged: boolean): Promise<void>;
+  storeRemote(uid: string, w: RemoteWork, source: unknown): Promise<void>;
   /** Keep a work under a new id and `name`, owned by `uid`, not uploaded yet. Returns the new id. */
   fork(uid: string, id: string, name: string): Promise<string>;
   /** After an upload of `snap`: record `cloud`; the work stays dirty when it changed meanwhile. Returns that. */
@@ -280,13 +283,25 @@ export class SyncEngine {
 
   private async download(uid: string, id: string, local?: SyncWork): Promise<void> {
     const w = await this.transport.request<RemoteWork>('GET', `/works/${encodeURIComponent(id)}`);
+    const sourceChanged = (w.sourceKey ?? null) !== (local?.cloud?.sourceKey ?? null) || (!!w.sourceKey && !local?.hasSource);
+    // undefined: keep the local photo; null: the work has none now; otherwise the fetched photo
+    let source: unknown = sourceChanged ? null : undefined;
+    if (sourceChanged && w.sourceKey) {
+      try {
+        source = await this.transport.fetchSource(w.sourceKey);
+      } catch (e) {
+        // offline / signed out: stop this round; any other failure (file gone…): keep the local photo,
+        // the pattern itself still syncs (and the photo is fetched again with the next version)
+        if (!(e instanceof SyncHttpError) || e.offline || e.status === 401) throw e;
+        source = undefined;
+      }
+    }
     // edited while downloading: keep those edits as a copy (edits that were dirty before were
     // already kept by the caller; only a newer edit counts)
     await this.store.flush();
     const now = await this.store.get(id);
     if (now?.dirty && (!local?.dirty || now.draft.updatedAt !== local.draft.updatedAt || now.name !== local.name)) await this.fork(uid, now, '（冲突副本）');
-    const sourceChanged = (w.sourceKey ?? null) !== (local?.cloud?.sourceKey ?? null) || (!!w.sourceKey && !local?.hasSource);
-    await this.store.storeRemote(uid, w, sourceChanged);
+    await this.store.storeRemote(uid, w, source);
   }
 
   private async fork(uid: string, snap: SyncWork, suffix: string): Promise<string> {
@@ -323,9 +338,10 @@ export class SyncEngine {
   }
 
   private async upload(snap: SyncWork): Promise<void> {
+    // the photo already in the cloud stays (also when this device could not fetch it); a local photo
+    // not uploaded yet goes up first
     let sourceKey = snap.cloud?.sourceKey ?? null;
     if (snap.hasSource && !sourceKey) sourceKey = await this.transport.uploadSource(snap);
-    if (!snap.hasSource) sourceKey = null;
     const res = await this.transport.request<RemoteWork>('PUT', `/works/${encodeURIComponent(snap.id)}`, {
       baseRevision: snap.cloud?.revision ?? null,
       draft: snap.draft,
