@@ -2,7 +2,7 @@ import { docFromPattern, EMPTY_CELL, type PatternDoc } from '@pd/editor-core';
 import { getPalette } from '@pd/palettes';
 import { generatePattern, presetOptions } from '@pd/pattern-core';
 import { describe, expect, it } from 'vitest';
-import { fitSheet, MAX_EXPORT_PIXELS, MAX_EXPORT_SIDE } from '../src/lib/export-size';
+import { EXPORT_CELL, fitSheet, MAX_EXPORT_PIXELS, MAX_EXPORT_SIDE } from '../src/lib/export-size';
 import { makeTestImage } from '../src/lib/self-test';
 import { defaultWorkName, WorksStore, type FileStore, type KeyValue } from '../src/lib/works';
 
@@ -165,15 +165,21 @@ describe('WorksStore', () => {
 describe('fitSheet', () => {
   it('keeps the preferred cell size for normal patterns', () => {
     const { sheet, cell } = fitSheet(makeDoc('x', 'x', 48), { mirror: false, showCodes: true });
-    expect(cell).toBe(24);
+    expect(cell).toBe(EXPORT_CELL);
     expect(sheet.width).toBeLessThanOrEqual(MAX_EXPORT_SIDE);
+  });
+
+  it('keeps the full cell size for a typical 72×41 pattern', () => {
+    const base = makeDoc('k', 'k', 24);
+    const doc: PatternDoc = { ...base, cols: 72, rows: 41, cells: new Uint16Array(72 * 41) };
+    expect(fitSheet(doc, { mirror: false, showCodes: true }).cell).toBe(EXPORT_CELL);
   });
 
   it('shrinks cells so a 200-cell pattern fits the phone limits', () => {
     const big = makeDoc('y', 'y', 24);
     const doc: PatternDoc = { ...big, cols: 200, rows: 200, cells: new Uint16Array(200 * 200) };
     const { sheet, cell } = fitSheet(doc, { mirror: true, showCodes: true });
-    expect(cell).toBeLessThan(24);
+    expect(cell).toBeLessThan(EXPORT_CELL);
     expect(sheet.width).toBeLessThanOrEqual(MAX_EXPORT_SIDE);
     expect(sheet.height).toBeLessThanOrEqual(MAX_EXPORT_SIDE);
     expect(sheet.width * sheet.height).toBeLessThanOrEqual(MAX_EXPORT_PIXELS);

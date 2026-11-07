@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY_CELL, type PatternDoc } from '@pd/editor-core';
-import { cellAtPoint, drawPattern, layoutSheet, luminance, sheetTiles, textColorFor, usageText, visibleRange, type Ctx2D } from '../src';
+import { cellAtPoint, codeFontSize, drawPattern, layoutSheet, luminance, sheetTiles, textColorFor, usageText, visibleRange, type Ctx2D } from '../src';
 
 type Call = [string, ...unknown[]];
 
@@ -50,6 +50,21 @@ const doc: PatternDoc = {
   tier: 'all',
   settings: {},
 };
+
+describe('codeFontSize', () => {
+  it('uses ~42% of the cell for codes up to 3 characters', () => {
+    expect(codeFontSize(48, 3)).toBe(20);
+    expect(codeFontSize(24, 2)).toBe(10);
+  });
+  it('shrinks so a 4-character code (漫漫 IC04) still fits the cell', () => {
+    const px = codeFontSize(48, 4);
+    expect(px).toBeLessThan(20);
+    expect(px * 0.62 * 4).toBeLessThanOrEqual(48 * 0.88);
+  });
+  it('never goes below 7px', () => {
+    expect(codeFontSize(8, 4)).toBe(7);
+  });
+});
 
 describe('colors', () => {
   it('picks readable text colors', () => {

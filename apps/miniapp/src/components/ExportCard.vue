@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { PatternDoc } from '@pd/editor-core';
 import { computed, ref } from 'vue';
+import { EXPORT_CELL } from '../lib/export-size';
 import { askOpenAlbumSetting, exportSize, renderSheet, saveToAlbum } from '../lib/mp-files';
 
 // Export the printable sheet (title, rulers, codes, usage legend) to the photo album.
@@ -54,7 +55,7 @@ async function save() {
       <view class="label">格子里显示色号</view>
       <switch :checked="showCodes" color="#0f766e" @change="onCodes" />
     </view>
-    <view class="muted info">图片 {{ size.width }} × {{ size.height }} 像素<text v-if="size.cell < 24">（图纸较大，格子已缩小到 {{ size.cell }} 像素以便手机保存）</text></view>
+    <view class="muted info">图片 {{ size.width }} × {{ size.height }} 像素<text v-if="size.cell < EXPORT_CELL">（图纸较大，格子已缩小到 {{ size.cell }} 像素以便手机保存）</text></view>
     <button class="btn btn-primary save" :loading="busy" :disabled="busy" @tap="save">保存到相册</button>
   </view>
 </template>

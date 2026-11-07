@@ -39,6 +39,15 @@ export interface SheetLayout {
 const INK = '#24312F';
 const MUTED = '#5F6F6B';
 
+/**
+ * Font size (px) for the color codes in the cells of an exported sheet: as large as the cell allows
+ * (~42% of it) while the longest code still fits across the cell (bold glyphs ≈ 0.62 em wide).
+ */
+export function codeFontSize(cell: number, longestCode: number): number {
+  const fit = (cell * 0.88) / (0.62 * Math.max(1, longestCode));
+  return Math.max(7, Math.floor(Math.min(cell * 0.42, fit)));
+}
+
 /** Lay out a printable pattern sheet: header, coordinate rulers, coded grid and usage legend. */
 export function layoutSheet(doc: PatternDoc, options: SheetOptions = {}): SheetLayout {
   const s = Math.max(8, Math.round(options.cellSize ?? 24));
@@ -106,7 +115,8 @@ export function layoutSheet(doc: PatternDoc, options: SheetOptions = {}): SheetL
     const r0 = Math.max(0, Math.floor((view.y - grid.y) / s));
     const r1 = Math.min(doc.rows, Math.ceil((view.y + view.h - grid.y) / s));
     if (c0 < c1 && r0 < r1) {
-      ctx.font = `${Math.max(7, Math.floor(s * 0.36))}px ${FONT_FAMILY}`;
+      const longest = usage.reduce((n, u) => Math.max(n, u.key.length), 1);
+      ctx.font = `600 ${codeFontSize(s, longest)}px ${FONT_FAMILY}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       for (let r = r0; r < r1; r++) {

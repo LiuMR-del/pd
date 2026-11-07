@@ -7,7 +7,8 @@ import Modal from './Modal.vue';
 
 const mirror = ref(false);
 const showCodes = ref(true);
-const cellSize = ref(24);
+// 24 px cells gave 8 px codes, too blurry to read when zoomed in; 40 px is the default now
+const cellSize = ref(40);
 const busy = ref(false);
 const preview = ref<HTMLCanvasElement | null>(null);
 
@@ -86,9 +87,9 @@ async function copyUsage(): Promise<void> {
         <label class="sel">
           每格大小
           <select v-model.number="cellSize">
-            <option :value="16">小（16 像素）</option>
-            <option :value="24">中（24 像素）</option>
-            <option :value="32">大（32 像素，适合打印）</option>
+            <option :value="24">小（24 像素）</option>
+            <option :value="40">中（40 像素）</option>
+            <option :value="56">大（56 像素，适合打印）</option>
           </select>
         </label>
         <p class="help num">图片 {{ layout.sheet.width }} × {{ layout.sheet.height }} 像素</p>
