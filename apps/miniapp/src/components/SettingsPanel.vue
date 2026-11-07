@@ -5,7 +5,8 @@ import { computed } from 'vue';
 
 // Same settings model as the web app (@pd/app-shared), laid out for a phone: segmented choices,
 // pickers for brand / kit, sliders only for the custom size.
-const props = defineProps<{ modelValue: Settings; disabled?: boolean }>();
+// `paletteOnly`: just brand + kit (text / QR patterns have no style, size or background settings).
+const props = defineProps<{ modelValue: Settings; disabled?: boolean; paletteOnly?: boolean }>();
 const emit = defineEmits<{ 'update:modelValue': [Settings] }>();
 
 const styles = Object.keys(STYLE_LABELS) as Style[];
@@ -42,6 +43,7 @@ const onStroke = (e: unknown) => set({ strokeProtect: switchValue(e) });
 
 <template>
   <view class="panel" :class="{ disabled }">
+    <template v-if="!paletteOnly">
     <view class="row">
       <view class="label">风格</view>
       <view class="seg">
@@ -66,6 +68,7 @@ const onStroke = (e: unknown) => set({ strokeProtect: switchValue(e) });
         <slider class="slider" :min="2" :max="60" :step="1" :value="modelValue.maxColors" :disabled="disabled" show-value block-size="20" activeColor="#0f766e" @change="onMaxColors" />
       </view>
     </template>
+    </template>
 
     <picker mode="selector" :range="BRANDS" :value="brandIndex" :disabled="disabled" @change="onBrand">
       <view class="row picker-row">
@@ -80,14 +83,16 @@ const onStroke = (e: unknown) => set({ strokeProtect: switchValue(e) });
       </view>
     </picker>
 
-    <view class="row">
-      <view class="label">去掉背景</view>
-      <switch :checked="modelValue.removeBackground" :disabled="disabled" color="#0f766e" @change="onRemoveBg" />
-    </view>
-    <view class="row">
-      <view class="label">细线保护</view>
-      <switch :checked="modelValue.strokeProtect" :disabled="disabled" color="#0f766e" @change="onStroke" />
-    </view>
+    <template v-if="!paletteOnly">
+      <view class="row">
+        <view class="label">去掉背景</view>
+        <switch :checked="modelValue.removeBackground" :disabled="disabled" color="#0f766e" @change="onRemoveBg" />
+      </view>
+      <view class="row">
+        <view class="label">细线保护</view>
+        <switch :checked="modelValue.strokeProtect" :disabled="disabled" color="#0f766e" @change="onStroke" />
+      </view>
+    </template>
   </view>
 </template>
 

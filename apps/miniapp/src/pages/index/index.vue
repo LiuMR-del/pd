@@ -41,6 +41,10 @@ async function pickAndOpen() {
   }
 }
 
+function openMaker(kind: 'text' | 'qr') {
+  uni.navigateTo({ url: `/pages/editor/editor?kind=${kind}` });
+}
+
 function openWorks() {
   uni.navigateTo({ url: '/pages/works/works' });
 }
@@ -54,8 +58,8 @@ function openWorks() {
     </view>
 
     <button class="btn btn-primary" @tap="pickAndOpen">选图片生成</button>
-    <button class="btn" disabled>文字转图纸（开发中）</button>
-    <button class="btn" disabled>二维码转图纸（开发中）</button>
+    <button class="btn btn-text" @tap="openMaker('text')">文字转图纸</button>
+    <button class="btn btn-qr" @tap="openMaker('qr')">二维码转图纸</button>
     <button class="btn" @tap="openWorks">我的作品</button>
 
     <view class="card">

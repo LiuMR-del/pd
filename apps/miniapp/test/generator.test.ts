@@ -66,6 +66,13 @@ describe('Generator (mini-program worker client)', () => {
     expect(workers[0].posted).toBe(2);
   });
 
+  it('CancelledError keeps its own prototype (needed after ES5 compilation)', () => {
+    const e = new CancelledError();
+    expect(Object.getPrototypeOf(e)).toBe(CancelledError.prototype);
+    expect(e).toBeInstanceOf(Error);
+    expect(e.name).toBe('CancelledError');
+  });
+
   it('cancel() rejects with CancelledError and terminates the worker', async () => {
     const w = new FakeWorker(false);
     const gen = new Generator(() => w);

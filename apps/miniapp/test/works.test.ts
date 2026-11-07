@@ -86,6 +86,21 @@ describe('WorksStore', () => {
     expect(loaded.doc.cells[1]).toBe(EMPTY_CELL);
   });
 
+  it('attaches a thumbnail to an already saved work', () => {
+    const { files, store } = setup();
+    store.save(makeDoc('w1'));
+    expect(store.list()[0].thumb).toBeNull();
+    store.setThumb('w1', 'tmp/thumb.png');
+    expect(store.list()[0].thumb).toBe('user/works/w1.thumb.png');
+    expect(files.files.get('user/works/w1.thumb.png')).toBe('THUMB');
+    // later saves without a thumbnail keep it
+    store.save(makeDoc('w1'));
+    expect(store.list()[0].thumb).toBe('user/works/w1.thumb.png');
+    // unknown ids are ignored
+    store.setThumb('nope', 'tmp/thumb.png');
+    expect(store.list().length).toBe(1);
+  });
+
   it('lists newest first with counts, renames and removes', () => {
     const { files, store } = setup();
     store.save(makeDoc('a', '甲'), { source: 'tmp/photo.png', thumb: 'tmp/thumb.png' });

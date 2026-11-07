@@ -7,6 +7,9 @@ export class MakerError extends Error {
   readonly code: MakerErrorCode;
   constructor(code: MakerErrorCode, message: string) {
     super(message);
+    // when compiled down to ES5 (WeChat DevTools "ES6 转 ES5"), subclasses of Error lose their
+    // prototype and `instanceof MakerError` fails; restore it explicitly
+    Object.setPrototypeOf(this, MakerError.prototype);
     this.code = code;
     this.name = 'MakerError';
   }

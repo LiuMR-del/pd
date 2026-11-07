@@ -1,13 +1,29 @@
 <script setup lang="ts">
 import { onHide, onLoad, onReady, onUnload } from '@dcloudio/uni-app';
-import { normalizeSettings, toPatternOptions, type Settings } from '@pd/app-shared';
-import { beadCount, colorUsage, docFromPattern, EMPTY_CELL, PatternEditor, type PaletteEntry, type PatternDoc } from '@pd/editor-core';
+import {
+  defaultQrSettings,
+  defaultTextSettings,
+  makePattern,
+  makerName,
+  normalizeQr,
+  normalizeSettings,
+  normalizeText,
+  toPatternOptions,
+  type Kind,
+  type QrSettings,
+  type Settings,
+  type TextSettings,
+} from '@pd/app-shared';
+import { applyBrandConversion, beadCount, colorUsage, docFromPattern, EMPTY_CELL, PatternEditor, type ConversionPlan, type PaletteEntry, type PatternDoc } from '@pd/editor-core';
+import { MakerError } from '@pd/makers';
 import { getPalette } from '@pd/palettes';
-import type { RgbaImage } from '@pd/pattern-core';
+import type { PatternResult, RgbaImage } from '@pd/pattern-core';
 import { cellAtPoint, drawPattern, type Ctx2D, type PatternView } from '@pd/render';
 import { computed, getCurrentInstance, ref, shallowRef, watch } from 'vue';
+import BrandCard from '../../components/BrandCard.vue';
 import ColorSheet from '../../components/ColorSheet.vue';
 import ExportCard from '../../components/ExportCard.vue';
+import MakerPanel from '../../components/MakerPanel.vue';
 import SettingsPanel from '../../components/SettingsPanel.vue';
 import UsageSheet from '../../components/UsageSheet.vue';
 import { dragRect, fullRect, hitHandle, isFull, scaleRect, type Handle, type Rect, type Size } from '../../lib/crop';
@@ -16,6 +32,7 @@ import { decodeImage, loadCanvasImage } from '../../lib/image';
 import { loadLastSettings, saveLastSettings } from '../../lib/last-settings';
 import { queryCanvas, touchPoint, type CanvasHandle } from '../../lib/mp-canvas';
 import { renderThumb, worksStore } from '../../lib/mp-files';
+import { mpTextRasterizer } from '../../lib/mp-raster';
 import { sharedGenerator } from '../../lib/mp-worker';
 import { cropRgba } from '../../lib/pixels';
 import { fitContain, type Fit } from '../../lib/view';
@@ -24,7 +41,8 @@ import { defaultWorkName } from '../../lib/works';
 
 // Picked photo (?src=) or a saved work (?work=) → optional crop → settings → worker generation →
 // pattern on the canvas (1b-2); touch editing: tools, undo / redo, pinch zoom, usage and color
-// panels (1b-3); auto-saved to 「我的作品」 and exported to the photo album (1b-4).
+// panels (1b-3); auto-saved to 「我的作品」 and exported to the photo album (1b-4); text / QR
+// patterns (?kind=text|qr, made on the main thread) and switching brand / kit (1b-5).
 
 type Tool = 'move' | 'pen' | 'eraser' | 'picker' | 'fill' | 'replace';
 const TOOLS: { id: Tool; label: string }[] = [
@@ -39,6 +57,10 @@ const TOOLS: { id: Tool; label: string }[] = [
 const instance = getCurrentInstance();
 const generator = sharedGenerator();
 
+/** Where the pattern comes from: a photo, or made from text / a QR code. */
+const kind = ref<Kind>('image');
+const textSettings = ref<TextSettings>(defaultTextSettings());
+const qrSettings = ref<QrSettings>(defaultQrSettings());
 const src = ref('');
 const settings = ref<Settings>(loadLastSettings());
 const generating = ref(false);
@@ -53,7 +75,7 @@ const viewMode = ref<'pattern' | 'source'>('pattern');
 const tool = ref<Tool>('move');
 const currentColor = ref<number | null>(null);
 const highlight = ref<number | null>(null);
-const sheet = ref<'usage' | 'color' | 'export' | null>(null);
+const sheet = ref<'usage' | 'color' | 'export' | 'brand' | null>(null);
 /** Crop box in preview-image pixels; null = whole image. */
 const crop = ref<Rect | null>(null);
 const cropping = ref(false);
@@ -78,7 +100,15 @@ let sourceStored = false;
 let pendingDoc: PatternDoc | null = null;
 
 const imageSize = (): Size => ({ w: preview?.width ?? 1, h: preview?.height ?? 1 });
-const currentKey = () => JSON.stringify({ s: normalizeSettings(settings.value), c: crop.value });
+const makerSettings = (): TextSettings | QrSettings | null =>
+  kind.value === 'text' ? normalizeText(textSettings.value) : kind.value === 'qr' ? normalizeQr(qrSettings.value) : null;
+/** What the pattern depends on: settings + crop for photos; text / QR settings + brand / kit for makers. */
+const currentKey = () => {
+  const s = normalizeSettings(settings.value);
+  return kind.value === 'image' ? JSON.stringify({ s, c: crop.value }) : JSON.stringify({ b: s.brand, t: s.tier, m: makerSettings() });
+};
+const isMaker = computed(() => kind.value !== 'image');
+const tierValue = computed<number | 'all'>(() => normalizeSettings(settings.value).tier);
 const stale = computed(() => !!doc.value && appliedKey.value !== currentKey());
 const summary = computed(() => {
   void version.value;
@@ -107,6 +137,11 @@ onLoad((query) => {
     openWork(decode(q.work));
     return;
   }
+  if (q.kind === 'text' || q.kind === 'qr') {
+    kind.value = q.kind;
+    uni.setNavigationBarTitle({ title: q.kind === 'text' ? '文字图纸' : '二维码图纸' });
+    return;
+  }
   src.value = decode(String(q.src ?? ''));
 });
 
@@ -124,6 +159,11 @@ onReady(async () => {
     attach(d);
     edited.value = wasEdited;
     draw();
+  }
+  if (isMaker.value) {
+    // a new text pattern shows right away (default text); a new QR pattern waits for content
+    if (!doc.value) void make(true);
+    return;
   }
   if (!src.value) {
     if (!doc.value && !error.value) error.value = '没有收到图片，请返回首页重新选择';
@@ -148,6 +188,7 @@ onHide(() => {
 });
 
 onUnload(() => {
+  if (makeTimer) clearTimeout(makeTimer);
   if (dirty) void saveNow();
   // the worker is shared by all pages: only stop the job this page is waiting for
   if (generating.value) generator.cancel();
@@ -169,13 +210,19 @@ function openWork(id: string): void {
   }
   const { file, doc: d } = loaded;
   workId = file.id;
-  src.value = file.source ?? '';
+  // same draft meta as the web app: { kind, settings, crop } / { kind, settings, text } / { kind, settings, qr }
+  const meta = d.settings as { kind?: string; settings?: Partial<Settings>; text?: Partial<TextSettings>; qr?: Partial<QrSettings> };
+  kind.value = meta.kind === 'text' || meta.kind === 'qr' ? meta.kind : 'image';
+  if (kind.value === 'text') textSettings.value = normalizeText(meta.text);
+  if (kind.value === 'qr') qrSettings.value = normalizeQr(meta.qr);
+  src.value = kind.value === 'image' ? (file.source ?? '') : '';
   sourceStored = true;
   crop.value = file.crop;
   appliedCrop = file.crop;
-  const meta = d.settings as { settings?: Partial<Settings> };
-  if (meta.settings && typeof meta.settings === 'object') settings.value = normalizeSettings(meta.settings);
-  appliedKey.value = JSON.stringify({ s: normalizeSettings(settings.value), c: file.crop });
+  // brand / kit: the pattern's own (switching brand on the web does not touch meta.settings)
+  const saved = meta.settings && typeof meta.settings === 'object' ? meta.settings : settings.value;
+  settings.value = normalizeSettings({ ...saved, brand: d.brand, tier: d.tier === 'all' ? 'all' : Number(d.tier) });
+  appliedKey.value = currentKey();
   pendingDoc = d;
   uni.setNavigationBarTitle({ title: d.name });
 }
@@ -195,7 +242,11 @@ function scheduleSave(delay = 1500): void {
   }, delay);
 }
 
-/** Save the current pattern (with a fresh thumbnail); saves run one after another. */
+/**
+ * Save the current pattern. The work data is written synchronously right here (so it is on disk
+ * even when the page closes and another page opens the work at once); the thumbnail is rendered
+ * afterwards and attached when ready. The returned promise settles when the thumbnail is done.
+ */
 function saveNow(): Promise<void> {
   if (saveTimer) {
     clearTimeout(saveTimer);
@@ -204,20 +255,20 @@ function saveNow(): Promise<void> {
   const d = doc.value;
   if (!d) return saving;
   dirty = false;
+  try {
+    if (edited.value) d.settings.edited = true;
+    worksStore().save(d, { source: sourceStored ? undefined : src.value || null, crop: appliedCrop });
+    sourceStored = sourceStored || !!src.value;
+  } catch {
+    dirty = true;
+    toast('保存作品失败（可能是手机存储空间不足）');
+    return saving;
+  }
   saving = saving.then(async () => {
     try {
-      if (edited.value) d.settings.edited = true;
-      let thumb: string | null = null;
-      try {
-        thumb = await renderThumb(d);
-      } catch {
-        // the works list then shows no thumbnail; the work itself is still saved
-      }
-      worksStore().save(d, { source: sourceStored ? undefined : src.value || null, crop: appliedCrop, thumb });
-      sourceStored = sourceStored || !!src.value;
+      worksStore().setThumb(d.id, await renderThumb(d));
     } catch {
-      dirty = true;
-      toast('保存作品失败（可能是手机存储空间不足）');
+      // the works list then shows no (or an older) thumbnail; the work itself is saved
     }
   });
   return saving;
@@ -513,9 +564,23 @@ function attach(next: PatternDoc): void {
   unsubscribe?.();
   const sameSize = !!doc.value && doc.value.cols === next.cols && doc.value.rows === next.rows;
   const ed = new PatternEditor(next);
+  let docBrand = `${next.brand}|${next.tier}`;
   unsubscribe = ed.subscribe(() => {
     version.value++;
     edited.value = true;
+    // a brand switch (and its undo / redo) changes the pattern's brand / kit: the settings follow it.
+    // If the pattern matched the settings before, it still does: no "regenerate with new settings".
+    const nowBrand = `${next.brand}|${next.tier}`;
+    if (nowBrand !== docBrand) {
+      docBrand = nowBrand;
+      const wasStale = appliedKey.value !== currentKey();
+      const brandTier = { brand: next.brand, tier: next.tier === 'all' ? ('all' as const) : Number(next.tier) };
+      settings.value = normalizeSettings({ ...settings.value, ...brandTier });
+      if (!wasStale) appliedKey.value = currentKey();
+      // only brand / kit: other settings may not have been applied to this pattern yet
+      const meta = next.settings as { settings?: Partial<Settings> };
+      next.settings = { ...next.settings, settings: { ...(meta.settings ?? {}), ...brandTier } };
+    }
     requestDraw();
     scheduleSave();
   });
@@ -543,8 +608,22 @@ function mirror(): void {
   if (editor.value?.mirrorHorizontal()) toast('已左右翻转（可撤销）');
 }
 
-function toggleSheet(which: 'usage' | 'color' | 'export'): void {
+function toggleSheet(which: 'usage' | 'color' | 'export' | 'brand'): void {
   sheet.value = sheet.value === which ? null : which;
+}
+
+/** Switch the pattern to another brand / kit (one undo step); the settings follow. */
+function convertBrand(plan: ConversionPlan): void {
+  const ed = editor.value;
+  const d = doc.value;
+  if (!ed || !d) return;
+  const cur = currentColor.value === null ? undefined : plan.rows.find((r) => r.index === currentColor.value);
+  // the settings follow the pattern's new brand / kit in the editor change listener (attach)
+  const changed = applyBrandConversion(ed, plan);
+  // keep painting with the same bead, now under its new code
+  if (changed && cur) currentColor.value = ed.ensureColor(cur.to);
+  sheet.value = null;
+  toast(changed ? `已换成 ${plan.target.brand} 色号，可以撤销` : '色号没有变化');
 }
 
 function pickColor(entry: PaletteEntry): void {
@@ -592,6 +671,83 @@ async function confirmOverwrite(): Promise<boolean> {
   }
 }
 
+/** Make the result the current pattern (new work, or the same work regenerated) and save it. */
+async function adopt(result: PatternResult, s: Settings, newName: string, meta: Record<string, unknown>, usedCrop: Rect | null): Promise<void> {
+  const prev = doc.value;
+  if (!workId) workId = worksStore().newId();
+  const next = docFromPattern(result, { id: workId, name: prev?.name || newName, brand: s.brand, tier: String(s.tier), settings: meta });
+  if (prev) next.createdAt = prev.createdAt;
+  attach(next);
+  appliedKey.value = currentKey();
+  appliedCrop = usedCrop;
+  viewMode.value = 'pattern';
+  draw();
+  await saveNow();
+}
+
+/**
+ * Text / QR: made on the main thread (a few milliseconds). `auto` = live update while the settings
+ * are edited: no prompt, and an empty / unusable input just leaves the current pattern.
+ */
+async function make(auto = false): Promise<void> {
+  const k = kind.value;
+  if (k === 'image' || generating.value) return;
+  if (auto) {
+    // a live update never replaces hand edits, a work still being opened, or a pattern that
+    // already matches the settings (e.g. a just-opened work made on another device)
+    if (edited.value || pendingDoc || (doc.value && appliedKey.value === currentKey())) return;
+    await makeNow(k, true);
+    return;
+  }
+  generating.value = true;
+  try {
+    if (await confirmOverwrite()) await makeNow(k, false);
+  } finally {
+    generating.value = false;
+  }
+}
+
+async function makeNow(k: Exclude<Kind, 'image'>, auto: boolean): Promise<void> {
+  // read the settings only now (after any prompt), so the pattern and appliedKey agree
+  const ms = makerSettings();
+  if (!ms) return;
+  const s = normalizeSettings(settings.value);
+  let result: PatternResult;
+  try {
+    result = makePattern(k, ms, s.brand, s.tier, mpTextRasterizer);
+  } catch (e) {
+    if (auto && e instanceof MakerError && e.code === 'empty') {
+      error.value = '';
+      return;
+    }
+    error.value = e instanceof MakerError ? e.message : `生成失败：${messageOf(e)}`;
+    return;
+  }
+  error.value = '';
+  saveLastSettings(s);
+  await adopt(result, s, makerName(k, ms), k === 'qr' ? { kind: k, settings: s, qr: ms } : { kind: k, settings: s, text: ms }, null);
+}
+
+let makeTimer: ReturnType<typeof setTimeout> | null = null;
+// live preview while typing / sliding (only until the pattern is edited by hand)
+watch(
+  [textSettings, qrSettings, () => settings.value.brand, () => settings.value.tier],
+  () => {
+    if (!isMaker.value || edited.value) return;
+    if (makeTimer) clearTimeout(makeTimer);
+    makeTimer = setTimeout(() => {
+      makeTimer = null;
+      void make(true);
+    }, 300);
+  },
+  { deep: true },
+);
+
+function onGenerate(): void {
+  if (isMaker.value) void make();
+  else void generate();
+}
+
 async function generate(): Promise<void> {
   if (generating.value || cropping.value || !preview || !src.value) return;
   if (!(await confirmOverwrite())) return;
@@ -612,16 +768,7 @@ async function generate(): Promise<void> {
           : '图片是全透明的，没有可以转换的内容。';
       return;
     }
-    const prev = doc.value;
-    if (!workId) workId = worksStore().newId();
-    const next = docFromPattern(result, { id: workId, name: prev?.name || defaultWorkName(), brand: s.brand, tier: String(s.tier), settings: { kind: 'image', settings: s, crop: usedCrop } });
-    if (prev) next.createdAt = prev.createdAt;
-    attach(next);
-    appliedKey.value = JSON.stringify({ s, c: usedCrop });
-    appliedCrop = usedCrop;
-    viewMode.value = 'pattern';
-    draw();
-    await saveNow();
+    await adopt(result, s, defaultWorkName(), { kind: 'image', settings: s, crop: usedCrop }, usedCrop);
   } catch (e) {
     if (!(e instanceof CancelledError)) error.value = `生成失败：${messageOf(e)}`;
   } finally {
@@ -666,12 +813,12 @@ function messageOf(e: unknown): string {
       </view>
     </view>
     <view v-else class="bar">
-      <view v-if="doc" class="seg">
+      <view v-if="doc && !isMaker" class="seg">
         <view class="seg-item" :class="{ on: viewMode === 'pattern' }" @tap="viewMode = 'pattern'">图纸</view>
         <view class="seg-item" :class="{ on: viewMode === 'source' }" @tap="viewMode = 'source'">原图</view>
       </view>
       <view class="summary">{{ summary }}</view>
-      <button size="mini" :disabled="generating" @tap="startCrop">{{ crop ? '调整裁剪' : '裁剪' }}</button>
+      <button v-if="!isMaker" size="mini" :disabled="generating" @tap="startCrop">{{ crop ? '调整裁剪' : '裁剪' }}</button>
     </view>
 
     <view v-if="doc && showingPattern" class="tools">
@@ -693,11 +840,13 @@ function messageOf(e: unknown): string {
         </view>
         <view v-if="highlight !== null" class="hl" @tap="highlight = null">取消高亮</view>
         <button size="mini" class="act-usage" @tap="toggleSheet('usage')">{{ sheet === 'usage' ? '收起用量' : '用量' }}</button>
+        <button size="mini" class="act-brand" @tap="toggleSheet('brand')">换品牌</button>
         <button size="mini" class="act-export" @tap="toggleSheet('export')">导出</button>
       </view>
     </view>
 
     <ExportCard v-if="sheet === 'export' && doc && showingPattern" :doc="doc" :version="version" @close="sheet = null" />
+    <BrandCard v-if="sheet === 'brand' && doc && showingPattern" :doc="doc" :version="version" @close="sheet = null" @apply="convertBrand" />
 
     <UsageSheet
       v-if="sheet === 'usage' && doc && showingPattern"
@@ -713,9 +862,19 @@ function messageOf(e: unknown): string {
 
     <view v-if="error" class="error">{{ error }}</view>
 
-    <SettingsPanel v-model="settings" :disabled="generating || cropping" />
+    <MakerPanel
+      v-if="isMaker"
+      :kind="kind === 'qr' ? 'qr' : 'text'"
+      v-model:text="textSettings"
+      v-model:qr="qrSettings"
+      :brand="settings.brand"
+      :tier="tierValue"
+      :disabled="generating"
+    />
+    <SettingsPanel v-model="settings" :disabled="generating || cropping" :palette-only="isMaker" />
 
-    <button class="btn btn-primary generate" :disabled="generating || cropping || !src" @tap="generate">
+    <view v-if="isMaker && !edited" class="muted live">改参数后图纸会自动更新；手工修改后再改参数，需要点下面的按钮重新生成</view>
+    <button class="btn btn-primary generate" :disabled="generating || cropping || (!isMaker && !src)" @tap="onGenerate">
       {{ !doc ? '生成图纸' : stale ? '按新设置重新生成' : '重新生成' }}
     </button>
   </view>
@@ -857,5 +1016,8 @@ function messageOf(e: unknown): string {
 }
 .generate {
   margin-top: 24rpx;
+}
+.live {
+  margin-top: 16rpx;
 }
 </style>

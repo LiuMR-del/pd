@@ -133,6 +133,20 @@ export class WorksStore {
     return summary;
   }
 
+  /**
+   * Attach a freshly rendered thumbnail to a saved work. Separate from save() so the work data can
+   * be written synchronously (e.g. when the page closes) and the slower thumbnail follows.
+   */
+  setThumb(id: string, tempThumb: string): void {
+    const list = this.list();
+    const hit = list.find((w) => w.id === id);
+    if (!hit) return;
+    const thumb = `${this.root}/${id}.thumb.png`;
+    this.files.copy(tempThumb, thumb);
+    hit.thumb = thumb;
+    this.kv.set(INDEX_KEY, list);
+  }
+
   /** Save a copy of a work under a new id and name (e.g. the backup before regenerating). */
   saveCopy(doc: PatternDoc, name: string, options: SaveOptions = {}): WorkSummary {
     const copy: PatternDoc = { ...doc, id: this.newId(), name, cells: doc.cells.slice(), palette: doc.palette.map((p) => ({ ...p })) };

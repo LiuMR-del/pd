@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "license": "AGPL-3.0-only",
-  "description": "App-level logic shared by the web app and the WeChat mini-program (generation settings and their mapping to algorithm options). Pure TS, platform independent.",
+  "description": "App-level logic shared by the web app and the WeChat mini-program: generation settings and their mapping to algorithm options, text / QR pattern settings and colors. Pure TS, platform independent.",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -16,6 +16,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@pd/makers": "workspace:*",
     "@pd/palettes": "workspace:*",
     "@pd/pattern-core": "workspace:*"
   },

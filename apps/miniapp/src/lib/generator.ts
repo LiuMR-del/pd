@@ -102,5 +102,8 @@ export class Generator {
 export class CancelledError extends Error {
   constructor() {
     super('已取消');
+    // keep `instanceof CancelledError` working after WeChat DevTools compiles to ES5
+    Object.setPrototypeOf(this, CancelledError.prototype);
+    this.name = 'CancelledError';
   }
 }

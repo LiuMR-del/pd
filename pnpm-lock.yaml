@@ -358,6 +358,9 @@ importers:
 
   packages/app-shared:
     dependencies:
+      '@pd/makers':
+        specifier: workspace:*
+        version: link:../makers
       '@pd/palettes':
         specifier: workspace:*
         version: link:../palettes
